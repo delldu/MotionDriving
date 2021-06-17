@@ -13,6 +13,7 @@ import torch
 from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, region2gaussian
 from modules.util import to_homogeneous, from_homogeneous
 
+import pdb
 
 class PixelwiseFlowPredictor(nn.Module):
     """
@@ -24,16 +25,27 @@ class PixelwiseFlowPredictor(nn.Module):
                  estimate_occlusion_map=False, scale_factor=1, region_var=0.01,
                  use_covar_heatmap=False, use_deformed_source=True, revert_axis_swap=False):
         super(PixelwiseFlowPredictor, self).__init__()
+        # pdb.set_trace()
+        # block_expansion = 64
+        # num_blocks = 5
+        # max_features = 1024
+        # num_regions = 10
+        # num_channels = 3
+        # estimate_occlusion_map = True
+        # scale_factor = 0.25
+        # region_var = 0.01
+        # use_covar_heatmap = True
+        # use_deformed_source = True
+        # revert_axis_swap = True
+
         self.hourglass = Hourglass(block_expansion=block_expansion,
                                    in_features=(num_regions + 1) * (num_channels * use_deformed_source + 1),
                                    max_features=max_features, num_blocks=num_blocks)
 
         self.mask = nn.Conv2d(self.hourglass.out_filters, num_regions + 1, kernel_size=(7, 7), padding=(3, 3))
 
-        if estimate_occlusion_map:
-            self.occlusion = nn.Conv2d(self.hourglass.out_filters, 1, kernel_size=(7, 7), padding=(3, 3))
-        else:
-            self.occlusion = None
+        # estimate_occlusion_map = True
+        self.occlusion = nn.Conv2d(self.hourglass.out_filters, 1, kernel_size=(7, 7), padding=(3, 3))
 
         self.num_regions = num_regions
         self.scale_factor = scale_factor
@@ -49,29 +61,46 @@ class PixelwiseFlowPredictor(nn.Module):
         """
         Eq 6. in the paper H_k(z)
         """
+        # (Pdb) source_image.shape -- torch.Size([1, 3, 64, 64])
         spatial_size = source_image.shape[2:]
-        covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
+
+        # use_covar_heatmap = True
+        # covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
+        covar = driving_region_params['covar']
         gaussian_driving = region2gaussian(driving_region_params['shift'], covar=covar, spatial_size=spatial_size)
-        covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
+
+
+        # use_covar_heatmap = True
+        # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
+        covar = source_region_params['covar']
         gaussian_source = region2gaussian(source_region_params['shift'], covar=covar, spatial_size=spatial_size)
 
         heatmap = gaussian_driving - gaussian_source
+        # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
 
         # adding background feature
         zeros = torch.zeros(heatmap.shape[0], 1, spatial_size[0], spatial_size[1])
         heatmap = torch.cat([zeros.type(heatmap.type()), heatmap], dim=1)
         heatmap = heatmap.unsqueeze(2)
+
+        # (Pdb) heatmap.size() -- torch.Size([1, 11, 1, 64, 64])
+
         return heatmap
 
-    def create_sparse_motions(self, source_image, driving_region_params, source_region_params, bg_params=None):
+    def create_sparse_motions(self, source_image, driving_region_params, source_region_params):
         bs, _, h, w = source_image.shape
         identity_grid = make_coordinate_grid((h, w), type=source_region_params['shift'].type())
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - driving_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
+
+        # 'affine' in driving_region_params -- True
         if 'affine' in driving_region_params:
             affine = torch.matmul(source_region_params['affine'], torch.inverse(driving_region_params['affine']))
-            if self.revert_axis_swap:
-                affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
+
+            # self.revert_axis_swap == True
+            # if self.revert_axis_swap:
+            #     affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
+            affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
             affine = affine.unsqueeze(-3).unsqueeze(-3)
             affine = affine.repeat(1, 1, h, w, 1, 1)
             coordinate_grid = torch.matmul(affine, coordinate_grid.unsqueeze(-1))
@@ -80,15 +109,11 @@ class PixelwiseFlowPredictor(nn.Module):
         driving_to_source = coordinate_grid + source_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
 
         # adding background feature
-        if bg_params is None:
-            bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
-        else:
-            bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
-            bg_grid = to_homogeneous(bg_grid)
-            bg_grid = torch.matmul(bg_params.view(bs, 1, 1, 1, 3, 3), bg_grid.unsqueeze(-1)).squeeze(-1)
-            bg_grid = from_homogeneous(bg_grid)
+        bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
 
         sparse_motions = torch.cat([bg_grid, driving_to_source], dim=1)
+        # (Pdb) driving_to_source.size() -- torch.Size([1, 10, 64, 64, 2])
+        # pp sparse_motions.size() -- torch.Size([1, 11, 64, 64, 2])
 
         return sparse_motions
 
@@ -97,26 +122,37 @@ class PixelwiseFlowPredictor(nn.Module):
         source_repeat = source_image.unsqueeze(1).unsqueeze(1).repeat(1, self.num_regions + 1, 1, 1, 1, 1)
         source_repeat = source_repeat.view(bs * (self.num_regions + 1), -1, h, w)
         sparse_motions = sparse_motions.view((bs * (self.num_regions + 1), h, w, -1))
+
+        # (Pdb) source_repeat.size() -- torch.Size([11, 3, 64, 64])
+        # (Pdb) sparse_motions.size() -- torch.Size([11, 64, 64, 2])
         sparse_deformed = F.grid_sample(source_repeat, sparse_motions)
         sparse_deformed = sparse_deformed.view((bs, self.num_regions + 1, -1, h, w))
+
+        # (Pdb) sparse_deformed.size() -- torch.Size([1, 11, 3, 64, 64])
+
         return sparse_deformed
 
-    def forward(self, source_image, driving_region_params, source_region_params, bg_params=None):
-        if self.scale_factor != 1:
-            source_image = self.down(source_image)
+    def forward(self, source_image, driving_region_params, source_region_params):
+        # self.scale_factor == 0.25
+        # if self.scale_factor != 1:
+        #     source_image = self.down(source_image)
+        source_image = self.down(source_image)
 
         bs, _, h, w = source_image.shape
 
         out_dict = dict()
         heatmap_representation = self.create_heatmap_representations(source_image, driving_region_params,
                                                                      source_region_params)
-        sparse_motion = self.create_sparse_motions(source_image, driving_region_params,
-                                                   source_region_params, bg_params=bg_params)
+        sparse_motion = self.create_sparse_motions(source_image, driving_region_params, source_region_params)
         deformed_source = self.create_deformed_source_image(source_image, sparse_motion)
-        if self.use_deformed_source:
-            predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
-        else:
-            predictor_input = heatmap_representation
+
+        # self.use_deformed_source == True
+        # if self.use_deformed_source:
+        #     predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
+        # else:
+        #     predictor_input = heatmap_representation
+        predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
+
         predictor_input = predictor_input.view(bs, -1, h, w)
 
         prediction = self.hourglass(predictor_input)
@@ -130,8 +166,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         out_dict['optical_flow'] = deformation
 
-        if self.occlusion:
-            occlusion_map = torch.sigmoid(self.occlusion(prediction))
-            out_dict['occlusion_map'] = occlusion_map
+        occlusion_map = torch.sigmoid(self.occlusion(prediction))
+        out_dict['occlusion_map'] = occlusion_map
 
         return out_dict

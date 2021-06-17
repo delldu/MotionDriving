@@ -34,13 +34,9 @@ class Generator(nn.Module):
         # skips = True
         # revert_axis_swap = True
 
-
-        if pixelwise_flow_predictor_params is not None:
-            self.pixelwise_flow_predictor = PixelwiseFlowPredictor(num_regions=num_regions, num_channels=num_channels,
+        self.pixelwise_flow_predictor = PixelwiseFlowPredictor(num_regions=num_regions, num_channels=num_channels,
                                                                    revert_axis_swap=revert_axis_swap,
                                                                    **pixelwise_flow_predictor_params)
-        else:
-            self.pixelwise_flow_predictor = None
 
         self.first = SameBlock2d(num_channels, block_expansion, kernel_size=(7, 7), padding=(3, 3))
 
@@ -97,8 +93,7 @@ class Generator(nn.Module):
         out = input_skip
         return out
 
-    def forward(self, source_image, driving_region_params, source_region_params, bg_params=None):
-        # pp bg_params -- None
+    def forward(self, source_image, driving_region_params, source_region_params):
         out = self.first(source_image)
         skips = [out]
         for i in range(len(self.down_blocks)):
@@ -107,18 +102,13 @@ class Generator(nn.Module):
 
         output_dict = {}
 
-        if self.pixelwise_flow_predictor is not None:
-            # ==> YES
-            motion_params = self.pixelwise_flow_predictor(source_image=source_image,
-                                                          driving_region_params=driving_region_params,
-                                                          source_region_params=source_region_params,
-                                                          bg_params=bg_params)
-            output_dict["deformed"] = self.deform_input(source_image, motion_params['optical_flow'])
-            # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
-            if 'occlusion_map' in motion_params:
-                output_dict['occlusion_map'] = motion_params['occlusion_map']
-        else:
-            motion_params = None
+        motion_params = self.pixelwise_flow_predictor(source_image=source_image,
+                                                      driving_region_params=driving_region_params,
+                                                      source_region_params=source_region_params)
+        output_dict["deformed"] = self.deform_input(source_image, motion_params['optical_flow'])
+        # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
+        if 'occlusion_map' in motion_params:
+            output_dict['occlusion_map'] = motion_params['occlusion_map']
 
         out = self.apply_optical(input_previous=None, input_skip=out, motion_params=motion_params)
 
