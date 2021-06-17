@@ -24,6 +24,8 @@ from modules.region_predictor import RegionPredictor
 from modules.avd_network import AVDNetwork
 from animate import get_animation_region_params
 import matplotlib
+
+import os
 import pdb
 
 matplotlib.use('Agg')
@@ -166,7 +168,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--mode", default='avd', choices=['standard', 'relative', 'avd'],
                         help="Animation mode")
-    parser.add_argument("--img_shape", default="384,384", type=lambda x: list(map(int, x.split(','))),
+    parser.add_argument("--img_shape", default="256,256", type=lambda x: list(map(int, x.split(','))),
                         help='Shape of image, that the model was trained on.')
     parser.add_argument("--cpu", dest="cpu", action="store_true", help="cpu mode.")
     parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
