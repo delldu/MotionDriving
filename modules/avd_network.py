@@ -81,7 +81,12 @@ class AVDNetwork(nn.Module):
         jac = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
         return {'shift': mean, 'affine': jac}
 
-    def forward(self, x_id, x_pose, alpha=0.2):
+    def forward(self, x_id, x_pose):
+        # (Pdb) pp x_id.keys()
+        # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+        # (Pdb) pp x_pose.keys()
+        # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+
         # self.revert_axis_swap -- True
         if self.revert_axis_swap:
             affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
@@ -97,3 +102,100 @@ class AVDNetwork(nn.Module):
         rec['covar'] = torch.matmul(rec['affine'], rec['affine'].permute(0, 1, 3, 2))
 
         return rec
+
+
+if __name__ == '__main__':
+    """Onnx tools ..."""
+    import argparse
+    import os
+    import time
+    import numpy as np
+    import onnx
+    import onnxruntime
+
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-e', '--export', help="export onnx model", action='store_true')
+    parser.add_argument('-v', '--verify', help="verify onnx model", action='store_true')
+    parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+
+    #
+    # /************************************************************************************
+    # ***
+    # ***    MS: Define Global Names
+    # ***
+    # ************************************************************************************/
+    #
+
+    dummy_input = torch.randn(1, 1, 1, 512)
+    onnx_file_name = "{}/motion_driving_avd_network.onnx".format(args.output)
+
+    def get_model():
+        # num_regions = 10
+        model = AVDNetwork(num_regions=10)
+        model.load_state_dict(torch.load("../output/motion_driving_avd_network.pth"))
+        return model
+
+    def export_onnx():
+        """Export onnx model."""
+
+        # 1. Create and load model.
+        torch_model = get_model()
+        torch_model.eval()
+
+        # 2. Model export
+        print("Exporting onnx model to {}...".format(onnx_file_name))
+
+        input_names = ["input"]
+        output_names = ["output"]
+        # dynamic_axes = {'input': {0: "batch"},'output': {0: "batch"}}
+
+        torch.onnx.export(torch_model, dummy_input, onnx_file_name,
+                          input_names=input_names,
+                          output_names=output_names,
+                          verbose=True,
+                          opset_version=11,
+                          keep_initializers_as_inputs=False,
+                          export_params=True)
+
+        # 3. Visual model
+        # python -c "import netron; netron.start('output/model.onnx')"
+
+    def verify_onnx():
+        """Verify onnx model."""
+
+        torch_model = get_model()
+        torch_model.eval()
+
+        onnxruntime_engine = onnx_load(onnx_file_name)
+
+        def to_numpy(tensor):
+            return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+        with torch.no_grad():
+            torch_output = torch_model(dummy_input)
+
+        onnxruntime_inputs = {onnxruntime_engine.get_inputs()[0].name: to_numpy(dummy_input)}
+        onnxruntime_outputs = onnxruntime_engine.run(None, onnxruntime_inputs)
+
+        np.testing.assert_allclose(to_numpy(torch_output), onnxruntime_outputs[0], rtol=1e-03, atol=1e-03)
+        print("Onnx model {} has been tested with ONNXRuntime, result sounds good !".format(onnx_file_name))
+    #
+    # /************************************************************************************
+    # ***
+    # ***    Flow Control
+    # ***
+    # ************************************************************************************/
+    #
+
+    if args.export:
+        export_onnx()
+
+    if args.verify:
+        verify_onnx()
+
