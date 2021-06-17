@@ -98,6 +98,7 @@ class RegionPredictor(nn.Module):
         return region_params
 
     def forward(self, x):
+        # x.size() -- torch.Size([1, 3, 256, 256])
         # scale_factor = 0.25
         if self.scale_factor != 1:
             x = self.down(x)

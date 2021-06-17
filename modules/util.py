@@ -12,16 +12,21 @@ from torch import nn
 import torch.nn.functional as F
 import torch
 from sync_batchnorm import SynchronizedBatchNorm2d as BatchNorm2d
-
+import pdb
 
 def region2gaussian(center, covar, spatial_size):
     """
     Transform a region parameters into gaussian like heatmap
     """
+    # spatial_size = torch.Size([64, 64])
+    # center.size() -- torch.Size([1, 10, 2])
+
     mean = center
 
     coordinate_grid = make_coordinate_grid(spatial_size, mean.type())
     number_of_leading_dimensions = len(mean.shape) - 1
+    # number_of_leading_dimensions -- 2
+
     shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
     coordinate_grid = coordinate_grid.view(*shape)
     repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
@@ -32,6 +37,8 @@ def region2gaussian(center, covar, spatial_size):
     mean = mean.view(*shape)
 
     mean_sub = (coordinate_grid - mean)
+    # type(covar) -- <class 'torch.Tensor'>
+    # ==> type(covar) == float, False
     if type(covar) == float:
         out = torch.exp(-0.5 * (mean_sub ** 2).sum(-1) / covar)
     else:
@@ -100,6 +107,7 @@ class UpBlock2d(nn.Module):
         self.norm = BatchNorm2d(out_features, affine=True)
 
     def forward(self, x):
+        # ==> pdb.set_trace()
         out = F.interpolate(x, scale_factor=2)
         out = self.conv(out)
         out = self.norm(out)
@@ -120,6 +128,7 @@ class DownBlock2d(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size=(2, 2))
 
     def forward(self, x):
+        # ==> pdb.set_trace()
         out = self.conv(x)
         out = self.norm(out)
         out = F.relu(out)
@@ -139,6 +148,7 @@ class SameBlock2d(nn.Module):
         self.norm = BatchNorm2d(out_features, affine=True)
 
     def forward(self, x):
+        # ==> pdb.set_trace()
         out = self.conv(x)
         out = self.norm(out)
         out = F.relu(out)
@@ -161,6 +171,7 @@ class Encoder(nn.Module):
         self.down_blocks = nn.ModuleList(down_blocks)
 
     def forward(self, x):
+        # x.size() -- torch.Size([1, 3, 64, 64])
         outs = [x]
         for down_block in self.down_blocks:
             outs.append(down_block(outs[-1]))
@@ -186,7 +197,14 @@ class Decoder(nn.Module):
         self.out_filters = block_expansion + in_features
 
     def forward(self, x):
+        # x[0].size(), x[1].size(), x[2].size(), x[3].size(), x[4].size(), x[5].size()
+        # (torch.Size([1, 3, 64, 64]), torch.Size([1, 64, 32, 32]), 
+        # torch.Size([1, 128, 16, 16]), torch.Size([1, 256, 8, 8]), 
+        # torch.Size([1, 512, 4, 4]), torch.Size([1, 1024, 2, 2]))
         out = x.pop()
+        # out.size() -- torch.Size([1, 1024, 2, 2])
+        # len(x) -- 5, from 6 to 5
+
         for up_block in self.up_blocks:
             out = up_block(out)
             skip = x.pop()
@@ -201,9 +219,15 @@ class Hourglass(nn.Module):
 
     def __init__(self, block_expansion, in_features, num_blocks=3, max_features=256):
         super(Hourglass, self).__init__()
+        # block_expansion = 64
+        # in_features = 44
+        # num_blocks = 5
+        # max_features = 1024
+
         self.encoder = Encoder(block_expansion, in_features, num_blocks, max_features)
         self.decoder = Decoder(block_expansion, in_features, num_blocks, max_features)
         self.out_filters = self.decoder.out_filters
+        # self.out_filters -- 108
 
     def forward(self, x):
         return self.decoder(self.encoder(x))
@@ -216,10 +240,15 @@ class AntiAliasInterpolation2d(nn.Module):
 
     def __init__(self, channels, scale):
         super(AntiAliasInterpolation2d, self).__init__()
+        # channels = 3
+        # scale = 0.25
         sigma = (1 / scale - 1) / 2
+        # ==> sigma -- 1.5
         kernel_size = 2 * round(sigma * 4) + 1
+        # kernel_size -- 13
         self.ka = kernel_size // 2
         self.kb = self.ka - 1 if kernel_size % 2 == 0 else self.ka
+        # self.ka, self.kb -- (6, 6)
 
         kernel_size = [kernel_size, kernel_size]
         sigma = [sigma, sigma]
@@ -247,11 +276,12 @@ class AntiAliasInterpolation2d(nn.Module):
         self.scale = scale
         inv_scale = 1 / scale
         self.int_inv_scale = int(inv_scale)
+        # pp self.int_inv_scale -- 4
 
     def forward(self, input):
-        if self.scale == 1.0:
-            return input
-
+        # self.scale -- 0.25
+        # if self.scale == 1.0:
+        #     return input
         out = F.pad(input, (self.ka, self.kb, self.ka, self.kb))
         out = F.conv2d(out, weight=self.weight, groups=self.groups)
         out = out[:, :, ::self.int_inv_scale, ::self.int_inv_scale]

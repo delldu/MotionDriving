@@ -85,24 +85,16 @@ class Generator(nn.Module):
 
     def apply_optical(self, input_previous=None, input_skip=None, motion_params=None):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
-        if motion_params is not None:
-            if 'occlusion_map' in motion_params:
-                occlusion_map = motion_params['occlusion_map']
-            else:
-                occlusion_map = None
-            deformation = motion_params['optical_flow']
-            input_skip = self.deform_input(input_skip, deformation)
-
-            if occlusion_map is not None:
-                if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-                    occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
-                if input_previous is not None:
-                    input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
-                else:
-                    input_skip = input_skip * occlusion_map
-            out = input_skip
+        occlusion_map = motion_params['occlusion_map']
+        deformation = motion_params['optical_flow']
+        input_skip = self.deform_input(input_skip, deformation)
+        if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
+            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
+        if input_previous is not None:
+            input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
         else:
-            out = input_previous if input_previous is not None else input_skip
+            input_skip = input_skip * occlusion_map
+        out = input_skip
         return out
 
     def forward(self, source_image, driving_region_params, source_region_params, bg_params=None):

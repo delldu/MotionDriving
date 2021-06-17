@@ -3,7 +3,7 @@ python demo.py  \
 	--source_image $1 \
 	--driving_video $2 \
 	--img_shape=256,256 \
-	--checkpoint checkpoints/new_vox256.pth
+	--checkpoint checkpoints/vox256.pth
 
 # python demo.py  \
 # 	--config config/ted384.yaml \

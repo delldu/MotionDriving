@@ -104,7 +104,7 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
         # (Pdb) source_region_params['u'].size() -- torch.Size([10, 2, 2])
         # (Pdb) source_region_params['d'].size() -- torch.Size([10, 2, 2])
 
-        driving_region_params_initial = region_predictor(driving[:, :, 0])
+        # driving_region_params_initial = region_predictor(driving[:, :, 0])
         # driving[:, :, 0].size() -- torch.Size([1, 3, 384, 384])
         # driving_region_params_initial.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
 
@@ -114,9 +114,12 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
             if not cpu:
                 driving_frame = driving_frame.cuda()
             driving_region_params = region_predictor(driving_frame)
-            new_region_params = get_animation_region_params(source_region_params, driving_region_params,
-                                                            driving_region_params_initial, avd_network=avd_network,
-                                                            mode=animation_mode)
+            # new_region_params = get_animation_region_params(source_region_params, driving_region_params,
+            #                                                 driving_region_params_initial, avd_network=avd_network,
+            #                                                 mode=animation_mode)
+            # only for avd
+            new_region_params = avd_network(source_region_params, driving_region_params)
+
             out = generator(source, source_region_params=source_region_params, driving_region_params=new_region_params)
 
             predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
