@@ -24,12 +24,20 @@ from modules.region_predictor import RegionPredictor
 from modules.avd_network import AVDNetwork
 from animate import get_animation_region_params
 import matplotlib
+import pdb
 
 matplotlib.use('Agg')
 
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.7")
 
+# vox256.pth-- dict_keys(['generator', 'bg_predictor', 'region_predictor', 'optimizer_reconstruction',
+# 'avd_network', 'optimizer_avd', 'epoch_avd'])
+
+# ted384.pth -- dict_keys(['epoch_reconstruction', 
+#'generator', 'bg_predictor', 'region_predictor', 'avd_network'])
+
+# ==> generator, bg_predictor, region_predictor, avd_network
 
 def load_checkpoints(config_path, checkpoint_path, cpu=False):
     with open(config_path) as f:
@@ -83,9 +91,22 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
         if not cpu:
             source = source.cuda()
         driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
-        source_region_params = region_predictor(source)
-        driving_region_params_initial = region_predictor(driving[:, :, 0])
 
+        source_region_params = region_predictor(source)
+        # pp source.shape -- torch.Size([1, 3, 384, 384])
+        # source_region_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+        # (Pdb) source_region_params['shift'].size() -- torch.Size([1, 10, 2])
+        # (Pdb) source_region_params['covar'].size() -- torch.Size([1, 10, 2, 2])
+        # (Pdb) source_region_params['heatmap'].size() -- torch.Size([1, 10, 96, 96])
+        # (Pdb) source_region_params['affine'].size() -- torch.Size([1, 10, 2, 2])
+        # (Pdb) source_region_params['u'].size() -- torch.Size([10, 2, 2])
+        # (Pdb) source_region_params['d'].size() -- torch.Size([10, 2, 2])
+
+        driving_region_params_initial = region_predictor(driving[:, :, 0])
+        # driving[:, :, 0].size() -- torch.Size([1, 3, 384, 384])
+        # driving_region_params_initial.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+
+        # (Pdb) driving.shape -- torch.Size([1, 3, 265, 384, 384])
         for frame_idx in tqdm(range(driving.shape[2])):
             driving_frame = driving[:, :, frame_idx]
             if not cpu:
@@ -97,10 +118,16 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
             out = generator(source, source_region_params=source_region_params, driving_region_params=new_region_params)
 
             predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
+
+    # type(predictions), predictions[0].shape-- (<class 'list'>, (384, 384, 3))
+
     return predictions
 
 
 def main(opt):
+    if not os.path.exists(opt.output):
+        os.makedirs(opt.output)
+
     source_image = imageio.imread(opt.source_image)
     reader = imageio.get_reader(opt.driving_video)
     fps = reader.get_meta_data()['fps']
@@ -109,11 +136,23 @@ def main(opt):
 
     source_image = resize(source_image, opt.img_shape)[..., :3]
     driving_video = [resize(frame, opt.img_shape)[..., :3] for frame in driving_video]
+    
+    # type(source_image), source_image.shape -- (<class 'numpy.ndarray'>, (384, 384, 3))
+    # (Pdb) type(driving_video), len(driving_video), driving_video[0].shape
+    # (<class 'list'>, 265, (384, 384, 3))
+
     generator, region_predictor, avd_network = load_checkpoints(config_path=opt.config,
                                                                 checkpoint_path=opt.checkpoint, cpu=opt.cpu)
+
+    # torch.save(generator.state_dict(), "output/motion_driving_generator.pth")
+    # torch.save(region_predictor.state_dict(), "output/motion_driving_region_predictor.pth")
+    # torch.save(avd_network.state_dict(), "output/motion_driving_avd_network.pth")
+
     predictions = make_animation(source_image, driving_video, generator, region_predictor, avd_network,
                                  animation_mode=opt.mode, cpu=opt.cpu)
-    imageio.mimsave(opt.result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
+
+    result_filename = opt.output + "/" + os.path.basename(opt.driving_video)
+    imageio.mimsave(result_filename, [img_as_ubyte(frame) for frame in predictions], fps=fps)
 
 
 if __name__ == "__main__":
@@ -130,5 +169,6 @@ if __name__ == "__main__":
     parser.add_argument("--img_shape", default="384,384", type=lambda x: list(map(int, x.split(','))),
                         help='Shape of image, that the model was trained on.')
     parser.add_argument("--cpu", dest="cpu", action="store_true", help="cpu mode.")
+    parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
 
     main(parser.parse_args())

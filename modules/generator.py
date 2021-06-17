@@ -12,7 +12,7 @@ from torch import nn
 import torch.nn.functional as F
 from modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from modules.pixelwise_flow_predictor import PixelwiseFlowPredictor
-
+import pdb
 
 class Generator(nn.Module):
     """
@@ -23,6 +23,17 @@ class Generator(nn.Module):
     def __init__(self, num_channels, num_regions, block_expansion, max_features, num_down_blocks,
                  num_bottleneck_blocks, pixelwise_flow_predictor_params=None, skips=False, revert_axis_swap=True):
         super(Generator, self).__init__()
+
+        # num_channels = 3
+        # num_regions = 10
+        # block_expansion = 64
+        # max_features = 512
+        # num_down_blocks = 2
+        # num_bottleneck_blocks = 6
+        # pixelwise_flow_predictor_params = {'block_expansion': 64, 'max_features': 1024, 'num_blocks': 5, 'scale_factor': 0.25, 'use_deformed_source': True, 'use_covar_heatmap': True, 'estimate_occlusion_map': True}
+        # skips = True
+        # revert_axis_swap = True
+
 
         if pixelwise_flow_predictor_params is not None:
             self.pixelwise_flow_predictor = PixelwiseFlowPredictor(num_regions=num_regions, num_channels=num_channels,
@@ -48,7 +59,11 @@ class Generator(nn.Module):
         self.up_blocks = nn.ModuleList(up_blocks)
 
         self.bottleneck = torch.nn.Sequential()
+
+        # max_features == 512, block_expansion == 64, num_down_blocks == 2 ==> in_features == 256
         in_features = min(max_features, block_expansion * (2 ** num_down_blocks))
+
+        # num_bottleneck_blocks = 6
         for i in range(num_bottleneck_blocks):
             self.bottleneck.add_module('r' + str(i), ResBlock2d(in_features, kernel_size=(3, 3), padding=(1, 1)))
 
@@ -61,12 +76,15 @@ class Generator(nn.Module):
         _, h_old, w_old, _ = optical_flow.shape
         _, _, h, w = inp.shape
         if h_old != h or w_old != w:
+            # [b, h, w, 2] ==> [b, 2, h, w]
             optical_flow = optical_flow.permute(0, 3, 1, 2)
+            # Flow smoothing ...
             optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear')
             optical_flow = optical_flow.permute(0, 2, 3, 1)
         return F.grid_sample(inp, optical_flow)
 
     def apply_optical(self, input_previous=None, input_skip=None, motion_params=None):
+        # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
         if motion_params is not None:
             if 'occlusion_map' in motion_params:
                 occlusion_map = motion_params['occlusion_map']
@@ -88,6 +106,7 @@ class Generator(nn.Module):
         return out
 
     def forward(self, source_image, driving_region_params, source_region_params, bg_params=None):
+        # pp bg_params -- None
         out = self.first(source_image)
         skips = [out]
         for i in range(len(self.down_blocks)):
@@ -95,12 +114,15 @@ class Generator(nn.Module):
             skips.append(out)
 
         output_dict = {}
+
         if self.pixelwise_flow_predictor is not None:
+            # ==> YES
             motion_params = self.pixelwise_flow_predictor(source_image=source_image,
                                                           driving_region_params=driving_region_params,
                                                           source_region_params=source_region_params,
                                                           bg_params=bg_params)
             output_dict["deformed"] = self.deform_input(source_image, motion_params['optical_flow'])
+            # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
             if 'occlusion_map' in motion_params:
                 output_dict['occlusion_map'] = motion_params['occlusion_map']
         else:

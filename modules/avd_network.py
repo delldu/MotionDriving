@@ -8,7 +8,7 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 """
 import torch
 from torch import nn
-
+import pdb
 
 class AVDNetwork(nn.Module):
     """
@@ -17,6 +17,11 @@ class AVDNetwork(nn.Module):
 
     def __init__(self, num_regions, id_bottle_size=64, pose_bottle_size=64, revert_axis_swap=True):
         super(AVDNetwork, self).__init__()
+        # num_regions = 10
+        # id_bottle_size = 64
+        # pose_bottle_size = 64
+        # revert_axis_swap = True
+
         input_size = (2 + 4) * num_regions
         self.num_regions = num_regions
         self.revert_axis_swap = revert_axis_swap
@@ -64,8 +69,10 @@ class AVDNetwork(nn.Module):
     def region_params_to_emb(x):
         mean = x['shift']
         jac = x['affine']
+        # jac.size() -- torch.Size([1, 10, 2, 2])
         emb = torch.cat([mean, jac.view(jac.shape[0], jac.shape[1], -1)], dim=-1)
         emb = emb.view(emb.shape[0], -1)
+        # emb.size() -- torch.Size([1, 60])
         return emb
 
     def emb_to_region_params(self, emb):
@@ -75,6 +82,7 @@ class AVDNetwork(nn.Module):
         return {'shift': mean, 'affine': jac}
 
     def forward(self, x_id, x_pose, alpha=0.2):
+        # self.revert_axis_swap -- True
         if self.revert_axis_swap:
             affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
             sign = torch.sign(affine[:, :, 0:1, 0:1])
@@ -87,4 +95,5 @@ class AVDNetwork(nn.Module):
 
         rec = self.emb_to_region_params(rec)
         rec['covar'] = torch.matmul(rec['affine'], rec['affine'].permute(0, 1, 3, 2))
+
         return rec

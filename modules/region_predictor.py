@@ -11,7 +11,7 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
-
+import pdb
 
 def svd(covar, fast=False):
     if fast:
@@ -48,23 +48,42 @@ class RegionPredictor(nn.Module):
             self.jacobian.bias.data.copy_(torch.tensor([1, 0, 0, 1], dtype=torch.float))
         else:
             self.jacobian = None
+        # ==> pp self.jacobian == None
 
+        # temperature = 0.1
         self.temperature = temperature
         self.scale_factor = scale_factor
         self.pca_based = pca_based
         self.fast_svd = fast_svd
 
+        # scale_factor = 0.25
         if self.scale_factor != 1:
             self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
 
+        # block_expansion = 32
+        # num_regions = 10
+        # num_channels = 3
+        # max_features = 1024
+        # num_blocks = 5
+        # estimate_affine = True
+        # scale_factor = 0.25
+        # pca_based = True
+        # fast_svd = False
+        # pad = 3
+
     def region2affine(self, region):
+        # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
         shape = region.shape
         region = region.unsqueeze(-1)
+        # region.size() -- torch.Size([1, 10, 96, 96, 1]) ?
+
+        # region.type() -- 'torch.cuda.FloatTensor'
         grid = make_coordinate_grid(shape[2:], region.type()).unsqueeze_(0).unsqueeze_(0)
         mean = (region * grid).sum(dim=(2, 3))
 
         region_params = {'shift': mean}
 
+        # self.pca_based == True
         if self.pca_based:
             mean_sub = grid - mean.unsqueeze(-2).unsqueeze(-2)
             covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
@@ -72,9 +91,14 @@ class RegionPredictor(nn.Module):
             covar = covar.sum(dim=(2, 3))
             region_params['covar'] = covar
 
+        # (Pdb) region_params.keys() -- dict_keys(['shift', 'covar'])
+        # (Pdb) region_params['shift'].size() -- torch.Size([1, 10, 2])
+        # (Pdb) region_params['covar'].size() -- torch.Size([1, 10, 2, 2])
+
         return region_params
 
     def forward(self, x):
+        # scale_factor = 0.25
         if self.scale_factor != 1:
             x = self.down(x)
 
@@ -103,6 +127,7 @@ class RegionPredictor(nn.Module):
             region_params['affine'] = jacobian
             region_params['covar'] = torch.matmul(jacobian, jacobian.permute(0, 1, 3, 2))
         elif self.pca_based:
+            # self.pca_based == True
             covar = region_params['covar']
             shape = covar.shape
             covar = covar.view(-1, 2, 2)
