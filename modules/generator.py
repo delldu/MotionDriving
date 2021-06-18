@@ -114,16 +114,24 @@ class Generator(nn.Module):
 
         out = self.bottleneck(out)
         for i in range(len(self.up_blocks)):
-            if self.skips:
-                out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
+            # self.skips -- True
+            # if self.skips:
+            #     out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
+            out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
             out = self.up_blocks[i](out)
-        if self.skips:
-            out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
+
+        # self.skips -- True
+        # if self.skips:
+        #     out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
+        out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
+
         out = self.final(out)
         out = F.sigmoid(out)
 
-        if self.skips:
-            out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
+        # self.skips -- True
+        # if self.skips:
+        #     out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
+        out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
 
         output_dict["prediction"] = out
 

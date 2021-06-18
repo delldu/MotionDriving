@@ -8,6 +8,8 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 """
 import torch
 from torch import nn
+from typing import Dict
+
 import pdb
 
 class AVDNetwork(nn.Module):
@@ -65,33 +67,35 @@ class AVDNetwork(nn.Module):
             nn.Linear(256, input_size)
         )
 
-    @staticmethod
-    def region_params_to_emb(x):
-        mean = x['shift']
-        jac = x['affine']
+    def region_params_to_emb(self, x: Dict[str, torch.Tensor]):
+        mean = x["shift"]
+        jac = x["affine"]
         # jac.size() -- torch.Size([1, 10, 2, 2])
         emb = torch.cat([mean, jac.view(jac.shape[0], jac.shape[1], -1)], dim=-1)
         emb = emb.view(emb.shape[0], -1)
         # emb.size() -- torch.Size([1, 60])
         return emb
 
-    def emb_to_region_params(self, emb):
+    def emb_to_region_params(self, emb) -> Dict[str, torch.Tensor]:
         emb = emb.view(emb.shape[0], self.num_regions, 6)
         mean = emb[:, :, :2]
         jac = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
         return {'shift': mean, 'affine': jac}
 
-    def forward(self, x_id, x_pose):
+    def forward(self, x_id: Dict[str, torch.Tensor], x_pose: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         # (Pdb) pp x_id.keys()
         # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
         # (Pdb) pp x_pose.keys()
         # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
 
         # self.revert_axis_swap -- True
-        if self.revert_axis_swap:
-            affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
-            sign = torch.sign(affine[:, :, 0:1, 0:1])
-            x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
+        # if self.revert_axis_swap:
+        #     affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
+        #     sign = torch.sign(affine[:, :, 0:1, 0:1])
+        #     x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
+        affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
+        sign = torch.sign(affine[:, :, 0:1, 0:1])
+        x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
 
         pose_emb = self.pose_encoder(self.region_params_to_emb(x_pose))
         id_emb = self.id_encoder(self.region_params_to_emb(x_id))
@@ -115,6 +119,7 @@ if __name__ == '__main__':
 
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-b', '--build', help="build torch script", action='store_true')
     parser.add_argument('-e', '--export', help="export onnx model", action='store_true')
     parser.add_argument('-v', '--verify', help="verify onnx model", action='store_true')
     parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
@@ -138,8 +143,25 @@ if __name__ == '__main__':
     def get_model():
         # num_regions = 10
         model = AVDNetwork(num_regions=10)
-        model.load_state_dict(torch.load("../output/motion_driving_avd_network.pth"))
+
+        source_state = torch.load("../output/motion_driving_avd_network.pth")
+        target_state = {}
+        for k, v in source_state.items():
+            k = k.replace("module.", "")
+            target_state[k] = v
+
+        model.load_state_dict(target_state)
+
         return model
+
+
+    def build_script():
+        model = AVDNetwork(num_regions=10)
+
+        script_model = torch.jit.script(model)
+        print(script_model.code)
+        print(script_model.graph)
+
 
     def export_onnx():
         """Export onnx model."""
@@ -147,6 +169,9 @@ if __name__ == '__main__':
         # 1. Create and load model.
         torch_model = get_model()
         torch_model.eval()
+
+
+        pdb.set_trace()
 
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
@@ -192,6 +217,9 @@ if __name__ == '__main__':
     # ***
     # ************************************************************************************/
     #
+
+    if args.build:
+        build_script()
 
     if args.export:
         export_onnx()
