@@ -12,6 +12,8 @@ from torch import nn
 import torch.nn.functional as F
 from modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from modules.pixelwise_flow_predictor import PixelwiseFlowPredictor
+from typing import Dict, List
+
 import pdb
 
 class Generator(nn.Module):
@@ -68,8 +70,7 @@ class Generator(nn.Module):
         self.num_channels = num_channels
         self.skips = skips
 
-    @staticmethod
-    def deform_input(inp, optical_flow):
+    def deform_input(self, inp, optical_flow):
         _, h_old, w_old, _ = optical_flow.shape
         _, _, h, w = inp.shape
         if h_old != h or w_old != w:
@@ -80,28 +81,41 @@ class Generator(nn.Module):
             optical_flow = optical_flow.permute(0, 2, 3, 1)
         return F.grid_sample(inp, optical_flow)
 
-    def apply_optical(self, input_previous=None, input_skip=None, motion_params=None):
+
+    def apply_optical_with_prev(self, input_previous, input_skip, motion_params: Dict[str, torch.Tensor]):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
         occlusion_map = motion_params['occlusion_map']
         deformation = motion_params['optical_flow']
         input_skip = self.deform_input(input_skip, deformation)
         if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
             occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
-        if input_previous is not None:
-            input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
-        else:
-            input_skip = input_skip * occlusion_map
+        # input_previous != None
+        input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
         out = input_skip
         return out
 
-    def forward(self, source_image, driving_region_params, source_region_params):
+    def apply_optical_without_prev(self, input_skip, motion_params: Dict[str, torch.Tensor]):
+        # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
+        occlusion_map = motion_params['occlusion_map']
+        deformation = motion_params['optical_flow']
+        input_skip = self.deform_input(input_skip, deformation)
+        if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
+            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
+        input_skip = input_skip * occlusion_map
+        out = input_skip
+        return out
+
+    def forward(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
         out = self.first(source_image)
-        skips = [out]
-        for i in range(len(self.down_blocks)):
-            out = self.down_blocks[i](out)
+        skips: List[torch.Tensor] = [out]
+        # for i in range(len(self.down_blocks)):
+        #     out = self.down_blocks[i](out)
+        #     skips.append(out)
+        for mod in self.down_blocks:
+            out = mod(out)
             skips.append(out)
 
-        output_dict = {}
+        output_dict: Dict[str, torch.Tensor] = {}
 
         motion_params = self.pixelwise_flow_predictor(source_image=source_image,
                                                       driving_region_params=driving_region_params,
@@ -111,20 +125,22 @@ class Generator(nn.Module):
         if 'occlusion_map' in motion_params:
             output_dict['occlusion_map'] = motion_params['occlusion_map']
 
-        out = self.apply_optical(input_previous=None, input_skip=out, motion_params=motion_params)
+        out = self.apply_optical_without_prev(out, motion_params)
 
         out = self.bottleneck(out)
-        for i in range(len(self.up_blocks)):
+        i = 0
+        for mod in self.up_blocks:
             # self.skips -- True
             # if self.skips:
             #     out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
-            out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
-            out = self.up_blocks[i](out)
+            out = self.apply_optical_with_prev(out, skips[-(i + 1)], motion_params)
+            out = mod(out)
+            i = i + 1
 
         # self.skips -- True
         # if self.skips:
         #     out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
-        out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
+        out = self.apply_optical_with_prev(out, skips[0], motion_params)
 
         out = self.final(out)
         out = F.sigmoid(out)
@@ -132,7 +148,7 @@ class Generator(nn.Module):
         # self.skips -- True
         # if self.skips:
         #     out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
-        out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
+        out = self.apply_optical_with_prev(out, source_image, motion_params)
 
         output_dict["prediction"] = out
 

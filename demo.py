@@ -49,7 +49,7 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
                           num_channels=config['model_params']['num_channels'],
                           **config['model_params']['generator_params'])
 
-    # script_model = torch.jit.script(generator)
+    script_model = torch.jit.script(generator)
     # pdb.set_trace()
 
     if not cpu:
