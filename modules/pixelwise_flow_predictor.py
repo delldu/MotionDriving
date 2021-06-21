@@ -72,7 +72,6 @@ class PixelwiseFlowPredictor(nn.Module):
         covar = driving_region_params['covar']
         gaussian_driving = region2gaussian(driving_region_params['shift'], covar, h, w)
 
-
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
         covar = source_region_params['covar']
@@ -83,8 +82,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         # adding background feature
         zeros = torch.zeros(heatmap.shape[0], 1, h, w).to(heatmap.device)
-        heatmap = torch.cat([zeros, heatmap], dim=1)
-        heatmap = heatmap.unsqueeze(2)
+        heatmap = torch.cat([zeros, heatmap], dim=1).unsqueeze(2)
 
         # (Pdb) heatmap.size() -- torch.Size([1, 11, 1, 64, 64])
 
@@ -100,17 +98,17 @@ class PixelwiseFlowPredictor(nn.Module):
         coordinate_grid = identity_grid - driving_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
 
         # 'affine' in driving_region_params -- True
-        if 'affine' in driving_region_params:
-            affine = torch.matmul(source_region_params['affine'], torch.inverse(driving_region_params['affine']))
+        # if 'affine' in driving_region_params:
+        affine = torch.matmul(source_region_params['affine'], torch.inverse(driving_region_params['affine']))
 
-            # self.revert_axis_swap == True
-            # if self.revert_axis_swap:
-            #     affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
-            affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
-            affine = affine.unsqueeze(-3).unsqueeze(-3)
-            affine = affine.repeat(1, 1, h, w, 1, 1)
-            coordinate_grid = torch.matmul(affine, coordinate_grid.unsqueeze(-1))
-            coordinate_grid = coordinate_grid.squeeze(-1)
+        # self.revert_axis_swap == True
+        # if self.revert_axis_swap:
+        #     affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
+        affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
+        affine = affine.unsqueeze(-3).unsqueeze(-3)
+        affine = affine.repeat(1, 1, h, w, 1, 1)
+        coordinate_grid = torch.matmul(affine, coordinate_grid.unsqueeze(-1))
+        coordinate_grid = coordinate_grid.squeeze(-1)
 
         driving_to_source = coordinate_grid + source_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
 
@@ -164,8 +162,7 @@ class PixelwiseFlowPredictor(nn.Module):
         prediction = self.hourglass(predictor_input)
 
         mask = self.mask(prediction)
-        mask = F.softmax(mask, dim=1)
-        mask = mask.unsqueeze(2)
+        mask = F.softmax(mask, dim=1).unsqueeze(2)
         sparse_motion = sparse_motion.permute(0, 1, 4, 2, 3)
         deformation = (sparse_motion * mask).sum(dim=1)
         deformation = deformation.permute(0, 2, 3, 1)

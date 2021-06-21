@@ -90,9 +90,7 @@ class Generator(nn.Module):
         if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
             occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         # input_previous != None
-        input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
-        out = input_skip
-        return out
+        return input_skip * occlusion_map + input_previous * (1 - occlusion_map)
 
     def apply_optical_without_prev(self, input_skip, motion_params: Dict[str, torch.Tensor]):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
@@ -101,9 +99,7 @@ class Generator(nn.Module):
         input_skip = self.deform_input(input_skip, deformation)
         if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
             occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
-        input_skip = input_skip * occlusion_map
-        out = input_skip
-        return out
+        return input_skip * occlusion_map
 
     def forward(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
         out = self.first(source_image)
@@ -122,11 +118,11 @@ class Generator(nn.Module):
                                                       source_region_params=source_region_params)
         output_dict["deformed"] = self.deform_input(source_image, motion_params['optical_flow'])
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
-        if 'occlusion_map' in motion_params:
-            output_dict['occlusion_map'] = motion_params['occlusion_map']
+        # if 'occlusion_map' in motion_params:
+        #     output_dict['occlusion_map'] = motion_params['occlusion_map']
+        output_dict['occlusion_map'] = motion_params['occlusion_map']
 
         out = self.apply_optical_without_prev(out, motion_params)
-
         out = self.bottleneck(out)
         i = 0
         for mod in self.up_blocks:

@@ -89,12 +89,12 @@ class RegionPredictor(nn.Module):
         region_params = {'shift': mean}
 
         # self.pca_based == True
-        if self.pca_based:
-            mean_sub = grid - mean.unsqueeze(-2).unsqueeze(-2)
-            covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
-            covar = covar * region.unsqueeze(-1)
-            covar = covar.sum(dim=(2, 3))
-            region_params['covar'] = covar
+        # if self.pca_based:
+        mean_sub = grid - mean.unsqueeze(-2).unsqueeze(-2)
+        covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
+        covar = covar * region.unsqueeze(-1)
+        covar = covar.sum(dim=(2, 3))
+        region_params['covar'] = covar
 
         # (Pdb) region_params.keys() -- dict_keys(['shift', 'covar'])
         # (Pdb) region_params['shift'].size() -- torch.Size([1, 10, 2])
