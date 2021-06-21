@@ -21,7 +21,7 @@ class Generator(nn.Module):
     Generator that given source image and region parameters try to transform image according to movement trajectories
     induced by region parameters. Generator follows Johnson architecture.
     """
-    __constants__ = ['up_blocks', 'down_blocks']
+    # __constants__ = ['up_blocks', 'down_blocks']
 
     def __init__(self, num_channels, num_regions, block_expansion, max_features, num_down_blocks,
                  num_bottleneck_blocks, pixelwise_flow_predictor_params=None, skips=False, revert_axis_swap=True):
@@ -77,9 +77,9 @@ class Generator(nn.Module):
             # [b, h, w, 2] ==> [b, 2, h, w]
             optical_flow = optical_flow.permute(0, 3, 1, 2)
             # Flow smoothing ...
-            optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear')
+            optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear', align_corners=False)
             optical_flow = optical_flow.permute(0, 2, 3, 1)
-        return F.grid_sample(inp, optical_flow)
+        return F.grid_sample(inp, optical_flow, align_corners=False)
 
 
     def apply_optical_with_prev(self, input_previous, input_skip, motion_params: Dict[str, torch.Tensor]):
@@ -88,7 +88,7 @@ class Generator(nn.Module):
         deformation = motion_params['optical_flow']
         input_skip = self.deform_input(input_skip, deformation)
         if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
+            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         # input_previous != None
         input_skip = input_skip * occlusion_map + input_previous * (1 - occlusion_map)
         out = input_skip
@@ -100,7 +100,7 @@ class Generator(nn.Module):
         deformation = motion_params['optical_flow']
         input_skip = self.deform_input(input_skip, deformation)
         if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear')
+            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         input_skip = input_skip * occlusion_map
         out = input_skip
         return out
@@ -143,7 +143,7 @@ class Generator(nn.Module):
         out = self.apply_optical_with_prev(out, skips[0], motion_params)
 
         out = self.final(out)
-        out = F.sigmoid(out)
+        out = torch.sigmoid(out)
 
         # self.skips -- True
         # if self.skips:

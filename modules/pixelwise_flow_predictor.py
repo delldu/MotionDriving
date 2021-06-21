@@ -131,7 +131,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         # (Pdb) source_repeat.size() -- torch.Size([11, 3, 64, 64])
         # (Pdb) sparse_motions.size() -- torch.Size([11, 64, 64, 2])
-        sparse_deformed = F.grid_sample(source_repeat, sparse_motions)
+        sparse_deformed = F.grid_sample(source_repeat, sparse_motions, align_corners=False)
         sparse_deformed = sparse_deformed.view((bs, self.num_regions + 1, -1, h, w))
 
         # (Pdb) sparse_deformed.size() -- torch.Size([1, 11, 3, 64, 64])

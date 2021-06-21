@@ -163,7 +163,7 @@ class Encoder(nn.Module):
     """
     Hourglass Encoder
     """
-    __constants__ = ['down_blocks']
+    # __constants__ = ['down_blocks']
 
     def __init__(self, block_expansion, in_features, num_blocks=3, max_features=256):
         super(Encoder, self).__init__()
@@ -187,7 +187,7 @@ class Decoder(nn.Module):
     """
     Hourglass Decoder
     """
-    __constants__ = ['up_blocks']
+    # __constants__ = ['up_blocks']
 
     def __init__(self, block_expansion, in_features, num_blocks=3, max_features=256):
         super(Decoder, self).__init__()

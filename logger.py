@@ -206,18 +206,18 @@ class Visualizer:
         # Occlusion map
         if 'occlusion_map' in out:
             occlusion_map = out['occlusion_map'].data.cpu().repeat(1, 3, 1, 1)
-            occlusion_map = F.interpolate(occlusion_map, size=source.shape[1:3]).numpy()
+            occlusion_map = F.interpolate(occlusion_map, size=source.shape[1:3], align_corners=False).numpy()
             occlusion_map = np.transpose(occlusion_map, [0, 2, 3, 1])
             images.append(occlusion_map)
 
         # Heatmaps visualizations
         if 'heatmap' in out['driving_region_params']:
-            driving_heatmap = F.interpolate(out['driving_region_params']['heatmap'], size=source.shape[1:3])
+            driving_heatmap = F.interpolate(out['driving_region_params']['heatmap'], size=source.shape[1:3], align_corners=False)
             driving_heatmap = np.transpose(driving_heatmap.data.cpu().numpy(), [0, 2, 3, 1])
             images.append(draw_colored_heatmap(driving_heatmap, self.colormap, self.region_bg_color))
 
         if 'heatmap' in out['source_region_params']:
-            source_heatmap = F.interpolate(out['source_region_params']['heatmap'], size=source.shape[1:3])
+            source_heatmap = F.interpolate(out['source_region_params']['heatmap'], size=source.shape[1:3], align_corners=False)
             source_heatmap = np.transpose(source_heatmap.data.cpu().numpy(), [0, 2, 3, 1])
             images.append(draw_colored_heatmap(source_heatmap, self.colormap, self.region_bg_color))
 
