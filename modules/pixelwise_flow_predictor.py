@@ -63,25 +63,27 @@ class PixelwiseFlowPredictor(nn.Module):
         Eq 6. in the paper H_k(z)
         """
         # (Pdb) source_image.shape -- torch.Size([1, 3, 64, 64])
-        spatial_size = source_image.shape[2:]
+        # spatial_size = source_image.shape[2:]
+        h = int(source_image.shape[2])
+        w = int(source_image.shape[3])
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
         covar = driving_region_params['covar']
-        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, spatial_size)
+        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, h, w)
 
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
         covar = source_region_params['covar']
-        gaussian_source = region2gaussian(source_region_params['shift'], covar, spatial_size)
+        gaussian_source = region2gaussian(source_region_params['shift'], covar, h, w)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
 
         # adding background feature
-        zeros = torch.zeros(heatmap.shape[0], 1, spatial_size[0], spatial_size[1])
-        heatmap = torch.cat([zeros.type(heatmap.type()), heatmap], dim=1)
+        zeros = torch.zeros(heatmap.shape[0], 1, h, w).to(heatmap.device)
+        heatmap = torch.cat([zeros, heatmap], dim=1)
         heatmap = heatmap.unsqueeze(2)
 
         # (Pdb) heatmap.size() -- torch.Size([1, 11, 1, 64, 64])

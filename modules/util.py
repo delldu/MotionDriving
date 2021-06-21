@@ -16,7 +16,20 @@ from typing import List
 
 import pdb
 
-def region2gaussian(center, covar, spatial_size):
+@torch.jit.script
+def make_coordinate_grid(h: int, w: int):
+    """
+    Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
+    """
+    y = torch.arange(-1.0, 1.0, 2.0/h) + 1.0/h
+    x = torch.arange(-1.0, 1.0, 2.0/w) + 1.0/w
+    yy = y.view(-1, 1).repeat(1, w)
+    xx = x.view(1, -1).repeat(h, 1)
+
+    return torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
+
+@torch.jit.script
+def region2gaussian(center, covar, h: int, w: int):
     """
     Transform a region parameters into gaussian like heatmap
     """
@@ -25,7 +38,7 @@ def region2gaussian(center, covar, spatial_size):
 
     mean = center
 
-    coordinate_grid = make_coordinate_grid(int(spatial_size[0]), int(spatial_size[1])).to(mean.device)
+    coordinate_grid = make_coordinate_grid(h, w).to(mean.device)
     number_of_leading_dimensions = len(mean.shape) - 1
     # number_of_leading_dimensions -- 2
 
@@ -59,18 +72,6 @@ def region2gaussian(center, covar, spatial_size):
     out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
 
     return out
-
-@torch.jit.script
-def make_coordinate_grid(h: int, w: int):
-    """
-    Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
-    """
-    y = torch.arange(-1.0, 1.0, 2.0/h) + 1.0/h
-    x = torch.arange(-1.0, 1.0, 2.0/w) + 1.0/w
-    yy = y.view(-1, 1).repeat(1, w)
-    xx = x.view(1, -1).repeat(h, 1)
-
-    return torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
 
 class ResBlock2d(nn.Module):
     """
