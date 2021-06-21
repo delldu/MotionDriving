@@ -13,17 +13,22 @@ import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
 import pdb
 
-def svd(covar, fast=False):
-    if fast:
-        from torch_batch_svd import svd as fast_svd
-        return fast_svd(covar)
-    else:
-        u, s, v = torch.svd(covar.cpu())
-        s = s.to(covar.device)
-        u = u.to(covar.device)
-        v = v.to(covar.device)
-        return u, s, v
-
+# def svd(covar, fast=False):
+#     if fast:
+#         from torch_batch_svd import svd as fast_svd
+#         return fast_svd(covar)
+#     else:
+#         u, s, v = torch.svd(covar.cpu())
+#         s = s.to(covar.device)
+#         u = u.to(covar.device)
+#         v = v.to(covar.device)
+#         return u, s, v
+def svd(covar):
+    u, s, v = torch.svd(covar.cpu())
+    s = s.to(covar.device)
+    u = u.to(covar.device)
+    v = v.to(covar.device)
+    return u, s, v
 
 class RegionPredictor(nn.Module):
     """
@@ -100,8 +105,9 @@ class RegionPredictor(nn.Module):
     def forward(self, x):
         # x.size() -- torch.Size([1, 3, 256, 256])
         # scale_factor = 0.25
-        if self.scale_factor != 1:
-            x = self.down(x)
+        # if self.scale_factor != 1:
+        #     x = self.down(x)
+        x = self.down(x)
 
         feature_map = self.predictor(x)
         prediction = self.regions(feature_map)
@@ -109,35 +115,48 @@ class RegionPredictor(nn.Module):
         final_shape = prediction.shape
         region = prediction.view(final_shape[0], final_shape[1], -1)
         region = F.softmax(region / self.temperature, dim=2)
-        region = region.view(*final_shape)
+        # region = region.view(*final_shape)
+        region = region.view(final_shape)
 
         region_params = self.region2affine(region)
         region_params['heatmap'] = region
 
         # Regression-based estimation
-        if self.jacobian is not None:
-            jacobian_map = self.jacobian(feature_map)
-            jacobian_map = jacobian_map.reshape(final_shape[0], 1, 4, final_shape[2],
-                                                final_shape[3])
-            region = region.unsqueeze(2)
+        # self.jacobian is None
+        # if self.jacobian is not None:
+        #     jacobian_map = self.jacobian(feature_map)
+        #     jacobian_map = jacobian_map.reshape(final_shape[0], 1, 4, final_shape[2],
+        #                                         final_shape[3])
+        #     region = region.unsqueeze(2)
 
-            jacobian = region * jacobian_map
-            jacobian = jacobian.view(final_shape[0], final_shape[1], 4, -1)
-            jacobian = jacobian.sum(dim=-1)
-            jacobian = jacobian.view(jacobian.shape[0], jacobian.shape[1], 2, 2)
-            region_params['affine'] = jacobian
-            region_params['covar'] = torch.matmul(jacobian, jacobian.permute(0, 1, 3, 2))
-        elif self.pca_based:
-            # self.pca_based == True
-            covar = region_params['covar']
-            shape = covar.shape
-            covar = covar.view(-1, 2, 2)
-            u, s, v = svd(covar, self.fast_svd)
-            d = torch.diag_embed(s ** 0.5)
-            sqrt = torch.matmul(u, d)
-            sqrt = sqrt.view(*shape)
-            region_params['affine'] = sqrt
-            region_params['u'] = u
-            region_params['d'] = d
+        #     jacobian = region * jacobian_map
+        #     jacobian = jacobian.view(final_shape[0], final_shape[1], 4, -1)
+        #     jacobian = jacobian.sum(dim=-1)
+        #     jacobian = jacobian.view(jacobian.shape[0], jacobian.shape[1], 2, 2)
+        #     region_params['affine'] = jacobian
+        #     region_params['covar'] = torch.matmul(jacobian, jacobian.permute(0, 1, 3, 2))
+        # elif self.pca_based:
+        #     # self.pca_based == True
+        #     covar = region_params['covar']
+        #     shape = covar.shape
+        #     covar = covar.view(-1, 2, 2)
+        #     u, s, v = svd(covar, self.fast_svd)
+        #     d = torch.diag_embed(s ** 0.5)
+        #     sqrt = torch.matmul(u, d)
+        #     sqrt = sqrt.view(*shape)
+        #     region_params['affine'] = sqrt
+        #     region_params['u'] = u
+        #     region_params['d'] = d
+
+        covar = region_params['covar']
+        shape = covar.shape
+        covar = covar.view(-1, 2, 2)
+        u, s, v = svd(covar)
+        d = torch.diag_embed(s ** 0.5)
+        sqrt = torch.matmul(u, d)
+        sqrt = sqrt.view(shape)
+        region_params['affine'] = sqrt
+        region_params['u'] = u
+        region_params['d'] = d
 
         return region_params

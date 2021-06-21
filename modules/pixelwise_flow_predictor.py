@@ -68,13 +68,13 @@ class PixelwiseFlowPredictor(nn.Module):
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
         covar = driving_region_params['covar']
-        gaussian_driving = region2gaussian(driving_region_params['shift'], covar=covar, spatial_size=spatial_size)
+        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, spatial_size)
 
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
         covar = source_region_params['covar']
-        gaussian_source = region2gaussian(source_region_params['shift'], covar=covar, spatial_size=spatial_size)
+        gaussian_source = region2gaussian(source_region_params['shift'], covar, spatial_size)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])

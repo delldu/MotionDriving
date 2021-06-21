@@ -30,24 +30,33 @@ def region2gaussian(center, covar, spatial_size):
     # number_of_leading_dimensions -- 2
 
     shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
-    coordinate_grid = coordinate_grid.view(*shape)
+    # coordinate_grid = coordinate_grid.view(*shape)
+    coordinate_grid = coordinate_grid.view(shape)
+
     repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
-    coordinate_grid = coordinate_grid.repeat(*repeats)
+    # coordinate_grid = coordinate_grid.repeat(*repeats)
+    coordinate_grid = coordinate_grid.repeat(repeats)
 
     # Preprocess kp shape
     shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2)
-    mean = mean.view(*shape)
+    # mean = mean.view(*shape)
+    mean = mean.view(shape)
 
     mean_sub = (coordinate_grid - mean)
     # type(covar) -- <class 'torch.Tensor'>
     # ==> type(covar) == float, False
-    if type(covar) == float:
-        out = torch.exp(-0.5 * (mean_sub ** 2).sum(-1) / covar)
-    else:
-        shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
-        covar_inverse = torch.inverse(covar).view(*shape)
-        under_exp = torch.matmul(torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1))
-        out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
+    # if type(covar) == float:
+    #     out = torch.exp(-0.5 * (mean_sub ** 2).sum(-1) / covar)
+    # else:
+    #     shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
+    #     covar_inverse = torch.inverse(covar).view(*shape)
+    #     under_exp = torch.matmul(torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1))
+    #     out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
+
+    shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
+    covar_inverse = torch.inverse(covar).view(shape)
+    under_exp = torch.matmul(torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1))
+    out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
 
     return out
 

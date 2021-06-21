@@ -60,7 +60,7 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
                                        estimate_affine=config['model_params']['estimate_affine'],
                                        **config['model_params']['region_predictor_params'])
 
-    # script_model = torch.jit.script(region_predictor)
+    script_model = torch.jit.script(region_predictor)
     # pdb.set_trace()
 
 
