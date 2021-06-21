@@ -18,6 +18,8 @@ from torch.nn.parallel._functions import ReduceAddCoalesced, Broadcast
 
 from .comm import SyncMaster
 
+import pdb
+
 __all__ = ['SynchronizedBatchNorm1d', 'SynchronizedBatchNorm2d', 'SynchronizedBatchNorm3d']
 
 
@@ -47,51 +49,34 @@ class _SynchronizedBatchNorm(_BatchNorm):
 
     def forward(self, input):
         # If it is not parallel computation or is in evaluation mode, use PyTorch's implementation.
-        if not (self._is_parallel and self.training):
-            return F.batch_norm(
-                input, self.running_mean, self.running_var, self.weight, self.bias,
-                self.training, self.momentum, self.eps)
 
-        # Resize the input to (B, C, -1).
-        input_shape = input.size()
-        input = input.view(input.size(0), self.num_features, -1)
+        # self._is_parallel and self.training -- False, self.training -- False
+        # if not (self._is_parallel and self.training):
+        #     return F.batch_norm(
+        #         input, self.running_mean, self.running_var, self.weight, self.bias,
+        #         self.training, self.momentum, self.eps)
+        return F.batch_norm(
+            input, self.running_mean, self.running_var, self.weight, self.bias,
+            self.training, self.momentum, self.eps)
 
-        # Compute the sum and square-sum.
-        sum_size = input.size(0) * input.size(2)
-        input_sum = _sum_ft(input)
-        input_ssum = _sum_ft(input ** 2)
+    # def __data_parallel_replicate__(self, ctx, copy_id):
+    #     self._is_parallel = True
+    #     self._parallel_id = copy_id
 
-        # Reduce-and-broadcast the statistics.
-        if self._parallel_id == 0:
-            mean, inv_std = self._sync_master.run_master(_ChildMessage(input_sum, input_ssum, sum_size))
-        else:
-            mean, inv_std = self._slave_pipe.run_slave(_ChildMessage(input_sum, input_ssum, sum_size))
-
-        # Compute the output.
-        if self.affine:
-            # MJY:: Fuse the multiplication for speed.
-            output = (input - _unsqueeze_ft(mean)) * _unsqueeze_ft(inv_std * self.weight) + _unsqueeze_ft(self.bias)
-        else:
-            output = (input - _unsqueeze_ft(mean)) * _unsqueeze_ft(inv_std)
-
-        # Reshape it.
-        return output.view(input_shape)
-
-    def __data_parallel_replicate__(self, ctx, copy_id):
-        self._is_parallel = True
-        self._parallel_id = copy_id
-
-        # parallel_id == 0 means master device.
-        if self._parallel_id == 0:
-            ctx.sync_master = self._sync_master
-        else:
-            self._slave_pipe = ctx.sync_master.register_slave(copy_id)
+    #     # parallel_id == 0 means master device.
+    #     if self._parallel_id == 0:
+    #         ctx.sync_master = self._sync_master
+    #     else:
+    #         self._slave_pipe = ctx.sync_master.register_slave(copy_id)
 
     def _data_parallel_master(self, intermediates):
         """Reduce the sum and square-sum, compute the statistics, and broadcast it."""
 
         # Always using same "device order" makes the ReduceAdd operation faster.
         # Thanks to:: Tete Xiao (http://tetexiao.com/)
+
+        pdb.set_trace()
+
         intermediates = sorted(intermediates, key=lambda i: i[1].sum.get_device())
 
         to_reduce = [i[1][:2] for i in intermediates]
@@ -113,6 +98,10 @@ class _SynchronizedBatchNorm(_BatchNorm):
     def _compute_mean_std(self, sum_, ssum, size):
         """Compute the mean and standard-deviation with sum and square-sum. This method
         also maintains the moving average on the master device."""
+
+        pdb.set_trace()
+
+
         assert size > 1, 'BatchNorm computes unbiased standard-deviation, which requires size > 1.'
         mean = sum_ / size
         sumvar = ssum - sum_ * mean

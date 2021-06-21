@@ -19,6 +19,7 @@ class Generator(nn.Module):
     Generator that given source image and region parameters try to transform image according to movement trajectories
     induced by region parameters. Generator follows Johnson architecture.
     """
+    __constants__ = ['up_blocks', 'down_blocks']
 
     def __init__(self, num_channels, num_regions, block_expansion, max_features, num_down_blocks,
                  num_bottleneck_blocks, pixelwise_flow_predictor_params=None, skips=False, revert_axis_swap=True):

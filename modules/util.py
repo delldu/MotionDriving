@@ -12,6 +12,8 @@ from torch import nn
 import torch.nn.functional as F
 import torch
 from sync_batchnorm import SynchronizedBatchNorm2d as BatchNorm2d
+from typing import List
+
 import pdb
 
 def region2gaussian(center, covar, spatial_size):
@@ -107,8 +109,8 @@ class UpBlock2d(nn.Module):
         self.norm = BatchNorm2d(out_features, affine=True)
 
     def forward(self, x):
-        # ==> pdb.set_trace()
-        out = F.interpolate(x, scale_factor=2)
+        # x.size() -- torch.Size([1, 1024, 2, 2])
+        out = F.interpolate(x, scale_factor=2.0)
         out = self.conv(out)
         out = self.norm(out)
         out = F.relu(out)
@@ -159,6 +161,7 @@ class Encoder(nn.Module):
     """
     Hourglass Encoder
     """
+    __constants__ = ['down_blocks']
 
     def __init__(self, block_expansion, in_features, num_blocks=3, max_features=256):
         super(Encoder, self).__init__()
@@ -170,9 +173,9 @@ class Encoder(nn.Module):
                                            kernel_size=3, padding=1))
         self.down_blocks = nn.ModuleList(down_blocks)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         # x.size() -- torch.Size([1, 3, 64, 64])
-        outs = [x]
+        outs: List[torch.Tensor] = [x]
         for down_block in self.down_blocks:
             outs.append(down_block(outs[-1]))
         return outs
@@ -182,6 +185,7 @@ class Decoder(nn.Module):
     """
     Hourglass Decoder
     """
+    __constants__ = ['up_blocks']
 
     def __init__(self, block_expansion, in_features, num_blocks=3, max_features=256):
         super(Decoder, self).__init__()
@@ -195,8 +199,31 @@ class Decoder(nn.Module):
 
         self.up_blocks = nn.ModuleList(up_blocks)
         self.out_filters = block_expansion + in_features
+        # (Pdb) self.up_blocks
+        # ModuleList(
+        #   (0): UpBlock2d(
+        #     (conv): Conv2d(1024, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        #     (norm): SynchronizedBatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #   )
+        #   (1): UpBlock2d(
+        #     (conv): Conv2d(1024, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        #     (norm): SynchronizedBatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #   )
+        #   (2): UpBlock2d(
+        #     (conv): Conv2d(512, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        #     (norm): SynchronizedBatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #   )
+        #   (3): UpBlock2d(
+        #     (conv): Conv2d(256, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        #     (norm): SynchronizedBatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #   )
+        #   (4): UpBlock2d(
+        #     (conv): Conv2d(128, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        #     (norm): SynchronizedBatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #   )
+        # )
 
-    def forward(self, x):
+    def forward(self, x: List[torch.Tensor]) -> torch.Tensor:
         # x[0].size(), x[1].size(), x[2].size(), x[3].size(), x[4].size(), x[5].size()
         # (torch.Size([1, 3, 64, 64]), torch.Size([1, 64, 32, 32]), 
         # torch.Size([1, 128, 16, 16]), torch.Size([1, 256, 8, 8]), 
@@ -209,6 +236,8 @@ class Decoder(nn.Module):
             out = up_block(out)
             skip = x.pop()
             out = torch.cat([out, skip], dim=1)
+
+        # out.size() -- torch.Size([1, 35, 64, 64])
         return out
 
 

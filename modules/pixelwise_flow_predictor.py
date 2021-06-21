@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import torch
 from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, region2gaussian
 from modules.util import to_homogeneous, from_homogeneous
+from typing import Dict
 
 import pdb
 
@@ -57,7 +58,7 @@ class PixelwiseFlowPredictor(nn.Module):
         if self.scale_factor != 1:
             self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
 
-    def create_heatmap_representations(self, source_image, driving_region_params, source_region_params):
+    def create_heatmap_representations(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
         """
         Eq 6. in the paper H_k(z)
         """
@@ -87,7 +88,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return heatmap
 
-    def create_sparse_motions(self, source_image, driving_region_params, source_region_params):
+    def create_sparse_motions(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
         bs, _, h, w = source_image.shape
         identity_grid = make_coordinate_grid((h, w), type=source_region_params['shift'].type())
         identity_grid = identity_grid.view(1, 1, h, w, 2)
@@ -132,7 +133,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return sparse_deformed
 
-    def forward(self, source_image, driving_region_params, source_region_params):
+    def forward(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         # self.scale_factor == 0.25
         # if self.scale_factor != 1:
         #     source_image = self.down(source_image)
@@ -140,7 +141,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         bs, _, h, w = source_image.shape
 
-        out_dict = dict()
+        out_dict: Dict[str, torch.Tensor] = dict()
         heatmap_representation = self.create_heatmap_representations(source_image, driving_region_params,
                                                                      source_region_params)
         sparse_motion = self.create_sparse_motions(source_image, driving_region_params, source_region_params)

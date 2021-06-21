@@ -48,6 +48,10 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     generator = Generator(num_regions=config['model_params']['num_regions'],
                           num_channels=config['model_params']['num_channels'],
                           **config['model_params']['generator_params'])
+
+    # script_model = torch.jit.script(generator)
+    # pdb.set_trace()
+
     if not cpu:
         generator.cuda()
 
@@ -55,11 +59,20 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
                                        num_channels=config['model_params']['num_channels'],
                                        estimate_affine=config['model_params']['estimate_affine'],
                                        **config['model_params']['region_predictor_params'])
+
+    # script_model = torch.jit.script(region_predictor)
+    # pdb.set_trace()
+
+
     if not cpu:
         region_predictor.cuda()
 
     avd_network = AVDNetwork(num_regions=config['model_params']['num_regions'],
                              **config['model_params']['avd_network_params'])
+
+    # script_model = torch.jit.script(avd_network)
+    # pdb.set_trace()
+    
     if not cpu:
         avd_network.cuda()
 
