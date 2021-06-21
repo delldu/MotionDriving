@@ -25,7 +25,7 @@ def region2gaussian(center, covar, spatial_size):
 
     mean = center
 
-    coordinate_grid = make_coordinate_grid(spatial_size, mean.type())
+    coordinate_grid = make_coordinate_grid(int(spatial_size[0]), int(spatial_size[1])).to(mean.device)
     number_of_leading_dimensions = len(mean.shape) - 1
     # number_of_leading_dimensions -- 2
 
@@ -51,25 +51,17 @@ def region2gaussian(center, covar, spatial_size):
 
     return out
 
-
-def make_coordinate_grid(spatial_size, type):
+@torch.jit.script
+def make_coordinate_grid(h: int, w: int):
     """
     Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
     """
-    h, w = spatial_size
-    x = torch.arange(w).type(type)
-    y = torch.arange(h).type(type)
-
-    x = (2 * (x / (w - 1)) - 1)
-    y = (2 * (y / (h - 1)) - 1)
-
+    y = torch.arange(-1.0, 1.0, 2.0/h) + 1.0/h
+    x = torch.arange(-1.0, 1.0, 2.0/w) + 1.0/w
     yy = y.view(-1, 1).repeat(1, w)
     xx = x.view(1, -1).repeat(h, 1)
 
-    meshed = torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
-
-    return meshed
-
+    return torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
 
 class ResBlock2d(nn.Module):
     """

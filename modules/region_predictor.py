@@ -78,7 +78,7 @@ class RegionPredictor(nn.Module):
         # region.size() -- torch.Size([1, 10, 96, 96, 1]) ?
 
         # region.type() -- 'torch.cuda.FloatTensor'
-        grid = make_coordinate_grid(shape[2:], region.type()).unsqueeze_(0).unsqueeze_(0)
+        grid = make_coordinate_grid(int(shape[2]), int(shape[3])).unsqueeze_(0).unsqueeze_(0).to(region.device)
         mean = (region * grid).sum(dim=(2, 3))
 
         region_params = {'shift': mean}

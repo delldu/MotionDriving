@@ -91,8 +91,7 @@ class Transform:
 
         if ('sigma_tps' in kwargs) and ('points_tps' in kwargs):
             self.tps = True
-            self.control_points = make_coordinate_grid((kwargs['points_tps'], kwargs['points_tps']),
-                                                       type=self.theta.type())
+            self.control_points = make_coordinate_grid(int(kwargs['points_tps']), int(kwargs['points_tps'])).to(self.theta.device)
             self.control_points = self.control_points.unsqueeze(0)
             self.control_params = torch.normal(mean=0,
                                                std=kwargs['sigma_tps'] * torch.ones([bs, 1, kwargs['points_tps'] ** 2]))
@@ -100,7 +99,7 @@ class Transform:
             self.tps = False
 
     def transform_frame(self, frame):
-        grid = make_coordinate_grid(frame.shape[2:], type=frame.type()).unsqueeze(0)
+        grid = make_coordinate_grid(int(frame.shape[2]), int(shape[3])).to(frame.device).unsqueeze(0)
         grid = grid.view(1, frame.shape[2] * frame.shape[3], 2)
         grid = self.warp_coordinates(grid).view(self.bs, frame.shape[2], frame.shape[3], 2)
         return F.grid_sample(frame, grid, padding_mode="reflection")

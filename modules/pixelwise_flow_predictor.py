@@ -90,7 +90,10 @@ class PixelwiseFlowPredictor(nn.Module):
 
     def create_sparse_motions(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
         bs, _, h, w = source_image.shape
-        identity_grid = make_coordinate_grid((h, w), type=source_region_params['shift'].type())
+
+        # identity_grid = make_coordinate_grid((h, w), type=source_region_params['shift'].type())
+        identity_grid = make_coordinate_grid(h, w).to(source_region_params['shift'].device)
+
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - driving_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
 

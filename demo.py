@@ -70,7 +70,7 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     avd_network = AVDNetwork(num_regions=config['model_params']['num_regions'],
                              **config['model_params']['avd_network_params'])
 
-    # script_model = torch.jit.script(avd_network)
+    script_model = torch.jit.script(avd_network)
     # pdb.set_trace()
     
     if not cpu:
