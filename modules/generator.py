@@ -15,6 +15,8 @@ from modules.pixelwise_flow_predictor import PixelwiseFlowPredictor
 from typing import Dict, List
 
 import pdb
+# Only for typing annotations
+Tensor = torch.Tensor
 
 class Generator(nn.Module):
     """
@@ -82,7 +84,7 @@ class Generator(nn.Module):
         return F.grid_sample(inp, optical_flow, align_corners=False)
 
 
-    def apply_optical_with_prev(self, input_previous, input_skip, motion_params: Dict[str, torch.Tensor]):
+    def apply_optical_with_prev(self, input_previous, input_skip, motion_params: Dict[str, Tensor]):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
         occlusion_map = motion_params['occlusion_map']
         deformation = motion_params['optical_flow']
@@ -92,7 +94,7 @@ class Generator(nn.Module):
         # input_previous != None
         return input_skip * occlusion_map + input_previous * (1 - occlusion_map)
 
-    def apply_optical_without_prev(self, input_skip, motion_params: Dict[str, torch.Tensor]):
+    def apply_optical_without_prev(self, input_skip, motion_params: Dict[str, Tensor]):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
         occlusion_map = motion_params['occlusion_map']
         deformation = motion_params['optical_flow']
@@ -101,9 +103,9 @@ class Generator(nn.Module):
             occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         return input_skip * occlusion_map
 
-    def forward(self, source_image, driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
+    def forward(self, source_image, driving_region_params: Dict[str, Tensor], source_region_params: Dict[str, Tensor]):
         out = self.first(source_image)
-        skips: List[torch.Tensor] = [out]
+        skips: List[Tensor] = [out]
         # for i in range(len(self.down_blocks)):
         #     out = self.down_blocks[i](out)
         #     skips.append(out)
@@ -111,7 +113,7 @@ class Generator(nn.Module):
             out = mod(out)
             skips.append(out)
 
-        output_dict: Dict[str, torch.Tensor] = {}
+        output_dict: Dict[str, Tensor] = {}
 
         motion_params = self.pixelwise_flow_predictor(source_image=source_image,
                                                       driving_region_params=driving_region_params,

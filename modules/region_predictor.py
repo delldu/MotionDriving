@@ -11,7 +11,12 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
+
+from typing import Dict, List
+
 import pdb
+# Only for typing annotations
+Tensor = torch.Tensor
 
 # def svd(covar, fast=False):
 #     if fast:
@@ -102,7 +107,7 @@ class RegionPredictor(nn.Module):
 
         return region_params
 
-    def forward(self, x):
+    def forward(self, x) -> Dict[str, Tensor]:
         # x.size() -- torch.Size([1, 3, 256, 256])
         # scale_factor = 0.25
         # if self.scale_factor != 1:

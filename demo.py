@@ -49,7 +49,11 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
                           num_channels=config['model_params']['num_channels'],
                           **config['model_params']['generator_params'])
 
+    print("Building generator ...")
     script_model = torch.jit.script(generator)
+    print(script_model.code)
+    print("Building OK")
+
     # pdb.set_trace()
 
     if not cpu:
@@ -60,7 +64,10 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
                                        estimate_affine=config['model_params']['estimate_affine'],
                                        **config['model_params']['region_predictor_params'])
 
+    print("Building region predictor ...")
     script_model = torch.jit.script(region_predictor)
+    print(script_model.code)
+    print("Building OK")
     # pdb.set_trace()
 
 
@@ -70,7 +77,10 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     avd_network = AVDNetwork(num_regions=config['model_params']['num_regions'],
                              **config['model_params']['avd_network_params'])
 
+    print("Building avd_network ...")
     script_model = torch.jit.script(avd_network)
+    print(script_model.code)
+    print("Building OK")
     # pdb.set_trace()
     
     if not cpu:

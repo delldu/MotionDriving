@@ -12,6 +12,10 @@ from typing import Dict
 
 import pdb
 
+# Only for typing annotations
+Tensor = torch.Tensor
+
+
 class AVDNetwork(nn.Module):
     """
     Animation via Disentanglement network
@@ -67,7 +71,7 @@ class AVDNetwork(nn.Module):
             nn.Linear(256, input_size)
         )
 
-    def region_params_to_emb(self, x: Dict[str, torch.Tensor]):
+    def region_params_to_emb(self, x: Dict[str, Tensor]):
         mean = x["shift"]
         jac = x["affine"]
         # jac.size() -- torch.Size([1, 10, 2, 2])
@@ -76,13 +80,13 @@ class AVDNetwork(nn.Module):
         # emb.size() -- torch.Size([1, 60])
         return emb
 
-    def emb_to_region_params(self, emb) -> Dict[str, torch.Tensor]:
+    def emb_to_region_params(self, emb) -> Dict[str, Tensor]:
         emb = emb.view(emb.shape[0], self.num_regions, 6)
         mean = emb[:, :, :2]
         jac = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
         return {'shift': mean, 'affine': jac}
 
-    def forward(self, x_id: Dict[str, torch.Tensor], x_pose: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, x_id: Dict[str, Tensor], x_pose: Dict[str, Tensor]) -> Dict[str, Tensor]:
         # (Pdb) pp x_id.keys()
         # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
         # (Pdb) pp x_pose.keys()
