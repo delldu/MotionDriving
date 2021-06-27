@@ -21,12 +21,12 @@ class AVDNetwork(nn.Module):
     Animation via Disentanglement network
     """
 
-    def __init__(self, num_regions, id_bottle_size=64, pose_bottle_size=64, revert_axis_swap=True):
+    def __init__(self):
         super(AVDNetwork, self).__init__()
-        # num_regions = 10
-        # id_bottle_size = 64
-        # pose_bottle_size = 64
-        # revert_axis_swap = True
+        num_regions = 10
+        id_bottle_size = 64
+        pose_bottle_size = 64
+        revert_axis_swap = True
 
         input_size = (2 + 4) * num_regions
         self.num_regions = num_regions

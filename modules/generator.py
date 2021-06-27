@@ -25,19 +25,18 @@ class Generator(nn.Module):
     """
     # __constants__ = ['up_blocks', 'down_blocks']
 
-    def __init__(self, num_channels, num_regions, block_expansion, max_features, num_down_blocks,
-                 num_bottleneck_blocks, pixelwise_flow_predictor_params=None, skips=False, revert_axis_swap=True):
+    def __init__(self):
         super(Generator, self).__init__()
 
-        # num_channels = 3
-        # num_regions = 10
-        # block_expansion = 64
-        # max_features = 512
-        # num_down_blocks = 2
-        # num_bottleneck_blocks = 6
-        # pixelwise_flow_predictor_params = {'block_expansion': 64, 'max_features': 1024, 'num_blocks': 5, 'scale_factor': 0.25, 'use_deformed_source': True, 'use_covar_heatmap': True, 'estimate_occlusion_map': True}
-        # skips = True
-        # revert_axis_swap = True
+        num_channels = 3
+        num_regions = 10
+        block_expansion = 64
+        max_features = 512
+        num_down_blocks = 2
+        num_bottleneck_blocks = 6
+        pixelwise_flow_predictor_params = {'block_expansion': 64, 'max_features': 1024, 'num_blocks': 5, 'scale_factor': 0.25, 'use_deformed_source': True, 'use_covar_heatmap': True, 'estimate_occlusion_map': True}
+        skips = True
+        revert_axis_swap = True
 
         self.pixelwise_flow_predictor = PixelwiseFlowPredictor(num_regions=num_regions, num_channels=num_channels,
                                                                    revert_axis_swap=revert_axis_swap,

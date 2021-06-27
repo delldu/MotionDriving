@@ -40,10 +40,21 @@ class RegionPredictor(nn.Module):
     Region estimating. Estimate affine parameters of the region.
     """
 
-    def __init__(self, block_expansion, num_regions, num_channels, max_features,
-                 num_blocks, temperature, estimate_affine=False, scale_factor=1,
-                 pca_based=False, fast_svd=False, pad=3):
+    def __init__(self):
         super(RegionPredictor, self).__init__()
+
+        block_expansion = 32
+        num_regions = 10
+        num_channels = 3
+        max_features = 1024
+        num_blocks = 5
+        temperature = 0.1
+        estimate_affine = True
+        scale_factor = 0.25
+        pca_based = True
+        fast_svd = False
+        pad = 3
+
         self.predictor = Hourglass(block_expansion, in_features=num_channels,
                                    max_features=max_features, num_blocks=num_blocks)
 

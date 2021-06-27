@@ -45,9 +45,7 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     with open(config_path) as f:
         config = yaml.load(f)
 
-    generator = Generator(num_regions=config['model_params']['num_regions'],
-                          num_channels=config['model_params']['num_channels'],
-                          **config['model_params']['generator_params'])
+    generator = Generator()
 
     print("Building generator ...")
     script_model = torch.jit.script(generator)
@@ -59,23 +57,17 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     if not cpu:
         generator.cuda()
 
-    region_predictor = RegionPredictor(num_regions=config['model_params']['num_regions'],
-                                       num_channels=config['model_params']['num_channels'],
-                                       estimate_affine=config['model_params']['estimate_affine'],
-                                       **config['model_params']['region_predictor_params'])
+    region_predictor = RegionPredictor()
 
     print("Building region predictor ...")
     script_model = torch.jit.script(region_predictor)
     print(script_model.code)
     print("Building OK")
-    # pdb.set_trace()
-
 
     if not cpu:
         region_predictor.cuda()
 
-    avd_network = AVDNetwork(num_regions=config['model_params']['num_regions'],
-                             **config['model_params']['avd_network_params'])
+    avd_network = AVDNetwork()
 
     print("Building avd_network ...")
     script_model = torch.jit.script(avd_network)
