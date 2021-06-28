@@ -68,24 +68,25 @@ class PixelwiseFlowPredictor(nn.Module):
         """
         # (Pdb) source_image.shape -- torch.Size([1, 3, 64, 64])
         # spatial_size = source_image.shape[2:]
-        h = int(source_image.shape[2])
-        w = int(source_image.shape[3])
+        # h = int(source_image.shape[2])
+        # w = int(source_image.shape[3])
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
         covar = driving_region_params['covar']
-        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, h, w)
+        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, source_image)
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
         covar = source_region_params['covar']
-        gaussian_source = region2gaussian(source_region_params['shift'], covar, h, w)
+        gaussian_source = region2gaussian(source_region_params['shift'], covar, source_image)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
 
         # adding background feature
-        zeros = torch.zeros(heatmap.shape[0], 1, h, w).to(heatmap.device)
+        # zeros = torch.zeros(heatmap.shape[0], 1, h, w).to(heatmap.device)
+        zeros = torch.zeros_like(source_image)[:, 0:1, :, :]
         heatmap = torch.cat([zeros, heatmap], dim=1).unsqueeze(2)
 
         # (Pdb) heatmap.size() -- torch.Size([1, 11, 1, 64, 64])
@@ -97,8 +98,7 @@ class PixelwiseFlowPredictor(nn.Module):
         source_region_params: Dict[str, torch.Tensor]):
         bs, _, h, w = source_image.shape
 
-        # identity_grid = make_coordinate_grid((h, w), type=source_region_params['shift'].type())
-        identity_grid = make_coordinate_grid(h, w).to(source_region_params['shift'].device)
+        identity_grid = make_coordinate_grid(source_image).to(source_region_params['shift'].device)
 
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - driving_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
@@ -237,14 +237,20 @@ class Generator(nn.Module):
         self.skips = skips
 
     def deform_input(self, inp, optical_flow):
-        _, h_old, w_old, _ = optical_flow.shape
-        _, _, h, w = inp.shape
-        if h_old != h or w_old != w:
-            # [b, h, w, 2] ==> [b, 2, h, w]
-            optical_flow = optical_flow.permute(0, 3, 1, 2)
-            # Flow smoothing ...
-            optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear', align_corners=False)
-            optical_flow = optical_flow.permute(0, 2, 3, 1)
+        # Remove "if" for trace model
+        # _, h_old, w_old, _ = optical_flow.shape
+        # _, _, h, w = inp.shape
+        # if h_old != h or w_old != w:
+        #     # [b, h, w, 2] ==> [b, 2, h, w]
+        #     optical_flow = optical_flow.permute(0, 3, 1, 2)
+        #     # Flow smoothing ...
+        #     optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear', align_corners=False)
+        #     optical_flow = optical_flow.permute(0, 2, 3, 1)
+        optical_flow = optical_flow.permute(0, 3, 1, 2)
+        # Flow smoothing ...
+        optical_flow = F.interpolate(optical_flow, size=inp.shape[2:], mode='bilinear', align_corners=False)
+        optical_flow = optical_flow.permute(0, 2, 3, 1)
+
         return F.grid_sample(inp, optical_flow, align_corners=False)
 
 
@@ -253,8 +259,10 @@ class Generator(nn.Module):
         occlusion_map = motion_params['occlusion_map']
         deformation = motion_params['optical_flow']
         input_skip = self.deform_input(input_skip, deformation)
-        if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
+        # Remove "if" for trace model
+        # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
+        #     occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
+        occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         # input_previous != None
         return input_skip * occlusion_map + input_previous * (1 - occlusion_map)
 
@@ -263,12 +271,16 @@ class Generator(nn.Module):
         occlusion_map = motion_params['occlusion_map']
         deformation = motion_params['optical_flow']
         input_skip = self.deform_input(input_skip, deformation)
-        if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-            occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
+        # Remove "if" for trace model
+        # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
+        #     occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
+        occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         return input_skip * occlusion_map
 
     def forward(self, source_image, source_region_params: Dict[str, Tensor],
         driving_region_params: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        # Remove "if" for trace model
+
         out = self.first(source_image)
         skips: List[Tensor] = [out]
         # for i in range(len(self.down_blocks)):

@@ -59,10 +59,13 @@ class BatchNorm2d(_BatchNorm):
 
 
 @torch.jit.script
-def make_coordinate_grid(h: int, w: int):
+def make_coordinate_grid(template):
     """
+    template: BxCxHxW
     Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
     """
+    h = template.size(2)
+    w = template.size(3)
     y = torch.arange(-1.0, 1.0, 2.0/h) + 1.0/h
     x = torch.arange(-1.0, 1.0, 2.0/w) + 1.0/w
     yy = y.view(-1, 1).repeat(1, w)
@@ -71,7 +74,7 @@ def make_coordinate_grid(h: int, w: int):
     return torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
 
 @torch.jit.script
-def region2gaussian(center, covar, h: int, w: int):
+def region2gaussian(center, covar, template):
     """
     Transform a region parameters into gaussian like heatmap
     """
@@ -80,7 +83,7 @@ def region2gaussian(center, covar, h: int, w: int):
 
     mean = center
 
-    coordinate_grid = make_coordinate_grid(h, w).to(mean.device)
+    coordinate_grid = make_coordinate_grid(template).to(mean.device)
     number_of_leading_dimensions = len(mean.shape) - 1
     # number_of_leading_dimensions -- 2
 

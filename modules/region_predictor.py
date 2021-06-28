@@ -78,14 +78,14 @@ class RegionPredictor(nn.Module):
         # scale_factor = 0.25
         # pca_based = True
 
-    def region2affine(self, region):
+    def region2affine(self, region) -> Dict[str, Tensor]:
         # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
         shape = region.shape
         region = region.unsqueeze(-1)
         # region.size() -- torch.Size([1, 10, 96, 96, 1]) ?
 
         # region.type() -- 'torch.cuda.FloatTensor'
-        grid = make_coordinate_grid(int(shape[2]), int(shape[3])).unsqueeze_(0).unsqueeze_(0).to(region.device)
+        grid = make_coordinate_grid(region).unsqueeze_(0).unsqueeze_(0).to(region.device)
         mean = (region * grid).sum(dim=(2, 3))
 
         region_params = {'shift': mean}

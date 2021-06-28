@@ -58,8 +58,8 @@ class MotionDriving(nn.Module):
         # (Pdb) source_params['d'].size() -- torch.Size([10, 2, 2])
 
         # now image is driving frame
-        driving_params = self.region_predictor(driving_image)
-        transform_params = self.avd_network(source_params, driving_params)
+        driving_params: Dict[str, Tensor] = self.region_predictor(driving_image)
+        transform_params: Dict[str, Tensor] = self.avd_network(source_params, driving_params)
         
         return self.generator(source_image, source_params, transform_params)
 
@@ -78,8 +78,14 @@ def make_animation(model, source_image, driving_video):
     source = source.cuda()
     driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
 
+    total = len(range(driving.shape[2]))
+    progress_bar = tqdm(total = total)
     # (Pdb) driving.shape -- torch.Size([1, 3, 265, 384, 384])
-    for frame_idx in tqdm(range(driving.shape[2])):
+    progress_bar.set_description("Processing total %03d" % total)
+
+    for frame_idx in range(driving.shape[2]):
+        progress_bar.update(1)
+
         driving_frame = driving[:, :, frame_idx]
         driving_frame = driving_frame.cuda()
 
