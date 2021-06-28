@@ -18,19 +18,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-
-class motiondrivingModel(nn.Module):
-    """motiondriving Model."""
-
-    def __init__(self):
-        """Init model."""
-
-        super(motiondrivingModel, self).__init__()
-
-    def forward(self, x):
-        """Forward."""
-
-        return x
+from model_helper import MotionDriving
 
 
 def model_load(model, path):
@@ -58,11 +46,8 @@ def model_save(model, path):
 def get_model(checkpoint):
     """Create model."""
 
-    model_setenv()
-    model = motiondrivingModel()
-    model_load(model, checkpoint)
-    device = model_device()
-    model.to(device)
+    model = MotionDriving()
+    model.load_weights(checkpoint)
 
     return model
 
