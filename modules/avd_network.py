@@ -8,12 +8,15 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 """
 import torch
 from torch import nn
-from typing import Dict
+from typing import Dict, Tuple
+import collections
 
 import pdb
 
 # Only for typing annotations
 Tensor = torch.Tensor
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
 
 
 class AVDNetwork(nn.Module):
@@ -71,22 +74,20 @@ class AVDNetwork(nn.Module):
             nn.Linear(256, input_size)
         )
 
-    def region_params_to_emb(self, x: Dict[str, Tensor]):
-        mean = x["shift"]
-        jac = x["affine"]
-        # jac.size() -- torch.Size([1, 10, 2, 2])
-        emb = torch.cat([mean, jac.view(jac.shape[0], jac.shape[1], -1)], dim=-1)
+    def region_params_to_emb(self, shift, affine):
+        # affine.size() -- torch.Size([1, 10, 2, 2])
+        emb = torch.cat([shift, affine.view(affine.shape[0], affine.shape[1], -1)], dim=-1)
         emb = emb.view(emb.shape[0], -1)
         # emb.size() -- torch.Size([1, 60])
         return emb
 
-    def emb_to_region_params(self, emb) -> Dict[str, Tensor]:
+    def emb_to_region_params(self, emb) -> Tuple[Tensor, Tensor]:
         emb = emb.view(emb.shape[0], self.num_regions, 6)
-        mean = emb[:, :, :2]
-        jac = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
-        return {'shift': mean, 'affine': jac}
+        shift = emb[:, :, :2]
+        affine = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
+        return shift, affine
 
-    def forward(self, x_id: Dict[str, Tensor], x_pose: Dict[str, Tensor]) -> Dict[str, Tensor]:
+    def forward(self, x_id: RegionParams, x_pose: RegionParams) -> TransformParams:
         # (Pdb) pp x_id.keys()
         # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
         # (Pdb) pp x_pose.keys()
@@ -97,20 +98,20 @@ class AVDNetwork(nn.Module):
         #     affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
         #     sign = torch.sign(affine[:, :, 0:1, 0:1])
         #     x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
-        affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
+        affine = torch.matmul(x_id.affine, torch.inverse(x_pose.affine))
         sign = torch.sign(affine[:, :, 0:1, 0:1])
-        x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
+        # x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
 
-        pose_emb = self.pose_encoder(self.region_params_to_emb(x_pose))
-        id_emb = self.id_encoder(self.region_params_to_emb(x_id))
+        pose_emb = self.pose_encoder(self.region_params_to_emb(x_pose.shift, x_pose.affine))
+        id_emb = self.id_encoder(self.region_params_to_emb(x_id.shift, x_id.affine * sign))
 
         rec = self.decoder(torch.cat([pose_emb, id_emb], dim=1))
 
-        rec = self.emb_to_region_params(rec)
-        rec['covar'] = torch.matmul(rec['affine'], rec['affine'].permute(0, 1, 3, 2))
+        shift, affine = self.emb_to_region_params(rec)
+        covar = torch.matmul(affine, affine.permute(0, 1, 3, 2))
 
-        return rec
-
+        # ['shift', 'covar', 'affine']
+        return TransformParams(shift=shift, covar=covar, affine=affine)
 
 if __name__ == '__main__':
     """Onnx tools ..."""

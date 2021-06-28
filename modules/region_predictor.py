@@ -12,11 +12,15 @@ import torch
 import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
 
-from typing import Dict, List
+import collections
+from typing import Dict, List, Tuple
 
 import pdb
 # Only for typing annotations
 Tensor = torch.Tensor
+
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+
 
 def svd(covar):
     u, s, v = torch.svd(covar.cpu())
@@ -78,7 +82,7 @@ class RegionPredictor(nn.Module):
         # scale_factor = 0.25
         # pca_based = True
 
-    def region2affine(self, region) -> Dict[str, Tensor]:
+    def region2affine(self, region) -> Tuple[Tensor, Tensor]:
         # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
         shape = region.shape
         region = region.unsqueeze(-1)
@@ -88,7 +92,8 @@ class RegionPredictor(nn.Module):
         grid = make_coordinate_grid(region).unsqueeze_(0).unsqueeze_(0).to(region.device)
         mean = (region * grid).sum(dim=(2, 3))
 
-        region_params = {'shift': mean}
+        # region_params = {'shift': mean}
+        shift = mean
 
         # self.pca_based == True
         # if self.pca_based:
@@ -96,15 +101,15 @@ class RegionPredictor(nn.Module):
         covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
         covar = covar * region.unsqueeze(-1)
         covar = covar.sum(dim=(2, 3))
-        region_params['covar'] = covar
+        # region_params['covar'] = covar
 
         # (Pdb) region_params.keys() -- dict_keys(['shift', 'covar'])
         # (Pdb) region_params['shift'].size() -- torch.Size([1, 10, 2])
         # (Pdb) region_params['covar'].size() -- torch.Size([1, 10, 2, 2])
 
-        return region_params
+        return shift, covar
 
-    def forward(self, x) -> Dict[str, Tensor]:
+    def forward(self, x) -> RegionParams:
         # x.size() -- torch.Size([1, 3, 256, 256])
         # scale_factor = 0.25
         # if self.scale_factor != 1:
@@ -120,8 +125,9 @@ class RegionPredictor(nn.Module):
         # region = region.view(*final_shape)
         region = region.view(final_shape)
 
-        region_params = self.region2affine(region)
-        region_params['heatmap'] = region
+        shift, covar = self.region2affine(region)
+        # region_params['heatmap'] = region
+        heatmap = region
 
         # Regression-based estimation
         # self.jacobian is None
@@ -150,15 +156,14 @@ class RegionPredictor(nn.Module):
         #     region_params['u'] = u
         #     region_params['d'] = d
 
-        covar = region_params['covar']
         shape = covar.shape
         covar = covar.view(-1, 2, 2)
         u, s, v = svd(covar)
         d = torch.diag_embed(s ** 0.5)
         sqrt = torch.matmul(u, d)
         sqrt = sqrt.view(shape)
-        region_params['affine'] = sqrt
-        region_params['u'] = u
-        region_params['d'] = d
+        # region_params['affine'] = sqrt
+        # region_params['u'] = u
+        # region_params['d'] = d
 
-        return region_params
+        return RegionParams(shift=shift, covar=covar, heatmap=heatmap, affine=sqrt, u=u, d=d)

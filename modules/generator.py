@@ -13,16 +13,21 @@ import torch.nn.functional as F
 from modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, region2gaussian
 from typing import Dict, List
+import collections
 
 import pdb
 # Only for typing annotations
 Tensor = torch.Tensor
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
+
+MotionParams = collections.namedtuple('MotionParams', ['optical_flow', 'occlusion_map'])
 
 
 class PixelwiseFlowPredictor(nn.Module):
     """
     Module that predicts a pixelwise flow from sparse motion representation given by
-    source_region_params and driving_region_params
+    source_region_params and transform_region_params
     """
 
     def __init__(self, block_expansion, num_blocks, max_features, num_regions, num_channels,
@@ -62,7 +67,7 @@ class PixelwiseFlowPredictor(nn.Module):
             self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
 
     def create_heatmap_representations(self, source_image, 
-        driving_region_params: Dict[str, torch.Tensor], source_region_params: Dict[str, torch.Tensor]):
+        transform_region_params: TransformParams, source_region_params: RegionParams):
         """
         Eq 6. in the paper H_k(z)
         """
@@ -72,14 +77,14 @@ class PixelwiseFlowPredictor(nn.Module):
         # w = int(source_image.shape[3])
 
         # use_covar_heatmap = True
-        # covar = self.region_var if not self.use_covar_heatmap else driving_region_params['covar']
-        covar = driving_region_params['covar']
-        gaussian_driving = region2gaussian(driving_region_params['shift'], covar, source_image)
+        # covar = self.region_var if not self.use_covar_heatmap else transform_region_params['covar']
+        covar = transform_region_params.covar
+        gaussian_driving = region2gaussian(transform_region_params.shift, covar, source_image)
 
         # use_covar_heatmap = True
         # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
-        covar = source_region_params['covar']
-        gaussian_source = region2gaussian(source_region_params['shift'], covar, source_image)
+        covar = source_region_params.covar
+        gaussian_source = region2gaussian(source_region_params.shift, covar, source_image)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
@@ -93,19 +98,18 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return heatmap
 
-    def create_sparse_motions(self, source_image, 
-        driving_region_params: Dict[str, torch.Tensor], 
-        source_region_params: Dict[str, torch.Tensor]):
+    def create_sparse_motions(self, source_image, transform_region_params: TransformParams, 
+        source_region_params: RegionParams):
         bs, _, h, w = source_image.shape
 
-        identity_grid = make_coordinate_grid(source_image).to(source_region_params['shift'].device)
+        identity_grid = make_coordinate_grid(source_image).to(source_region_params.shift.device)
 
         identity_grid = identity_grid.view(1, 1, h, w, 2)
-        coordinate_grid = identity_grid - driving_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
+        coordinate_grid = identity_grid - transform_region_params.shift.view(bs, self.num_regions, 1, 1, 2)
 
-        # 'affine' in driving_region_params -- True
-        # if 'affine' in driving_region_params:
-        affine = torch.matmul(source_region_params['affine'], torch.inverse(driving_region_params['affine']))
+        # 'affine' in transform_region_params -- True
+        # if 'affine' in transform_region_params:
+        affine = torch.matmul(source_region_params.affine, torch.inverse(transform_region_params.affine))
 
         # self.revert_axis_swap == True
         # if self.revert_axis_swap:
@@ -116,7 +120,7 @@ class PixelwiseFlowPredictor(nn.Module):
         coordinate_grid = torch.matmul(affine, coordinate_grid.unsqueeze(-1))
         coordinate_grid = coordinate_grid.squeeze(-1)
 
-        driving_to_source = coordinate_grid + source_region_params['shift'].view(bs, self.num_regions, 1, 1, 2)
+        driving_to_source = coordinate_grid + source_region_params.shift.view(bs, self.num_regions, 1, 1, 2)
 
         # adding background feature
         bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
@@ -142,9 +146,8 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return sparse_deformed
 
-    def forward(self, source_image, 
-        driving_region_params: Dict[str, torch.Tensor], 
-        source_region_params: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, source_image, transform_region_params: TransformParams, 
+        source_region_params: RegionParams) -> MotionParams:
         # self.scale_factor == 0.25
         # if self.scale_factor != 1:
         #     source_image = self.down(source_image)
@@ -152,10 +155,10 @@ class PixelwiseFlowPredictor(nn.Module):
 
         bs, _, h, w = source_image.shape
 
-        out_dict: Dict[str, torch.Tensor] = dict()
-        heatmap_representation = self.create_heatmap_representations(source_image, driving_region_params,
+        # out_dict: Dict[str, torch.Tensor] = dict()
+        heatmap_representation = self.create_heatmap_representations(source_image, transform_region_params,
                                                                      source_region_params)
-        sparse_motion = self.create_sparse_motions(source_image, driving_region_params, source_region_params)
+        sparse_motion = self.create_sparse_motions(source_image, transform_region_params, source_region_params)
         deformed_source = self.create_deformed_source_image(source_image, sparse_motion)
 
         # self.use_deformed_source == True
@@ -175,12 +178,12 @@ class PixelwiseFlowPredictor(nn.Module):
         deformation = (sparse_motion * mask).sum(dim=1)
         deformation = deformation.permute(0, 2, 3, 1)
 
-        out_dict['optical_flow'] = deformation
+        # out_dict['optical_flow'] = deformation
 
         occlusion_map = torch.sigmoid(self.occlusion(prediction))
-        out_dict['occlusion_map'] = occlusion_map
+        # out_dict['occlusion_map'] = occlusion_map
 
-        return out_dict
+        return MotionParams(optical_flow = deformation, occlusion_map=occlusion_map)
 
 
 class Generator(nn.Module):
@@ -254,10 +257,10 @@ class Generator(nn.Module):
         return F.grid_sample(inp, optical_flow, align_corners=False)
 
 
-    def apply_optical_with_prev(self, input_previous, input_skip, motion_params: Dict[str, Tensor]):
+    def apply_optical_with_prev(self, input_previous, input_skip, motion_params: MotionParams):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
-        occlusion_map = motion_params['occlusion_map']
-        deformation = motion_params['optical_flow']
+        occlusion_map = motion_params.occlusion_map
+        deformation = motion_params.optical_flow
         input_skip = self.deform_input(input_skip, deformation)
         # Remove "if" for trace model
         # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
@@ -266,10 +269,10 @@ class Generator(nn.Module):
         # input_previous != None
         return input_skip * occlusion_map + input_previous * (1 - occlusion_map)
 
-    def apply_optical_without_prev(self, input_skip, motion_params: Dict[str, Tensor]):
+    def apply_optical_without_prev(self, input_skip, motion_params: MotionParams):
         # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
-        occlusion_map = motion_params['occlusion_map']
-        deformation = motion_params['optical_flow']
+        occlusion_map = motion_params.occlusion_map
+        deformation = motion_params.optical_flow
         input_skip = self.deform_input(input_skip, deformation)
         # Remove "if" for trace model
         # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
@@ -277,8 +280,7 @@ class Generator(nn.Module):
         occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         return input_skip * occlusion_map
 
-    def forward(self, source_image, source_region_params: Dict[str, Tensor],
-        driving_region_params: Dict[str, Tensor]) -> Dict[str, Tensor]:
+    def forward(self, source_image, source_region_params: RegionParams, transform_region_params: TransformParams):
         # Remove "if" for trace model
 
         out = self.first(source_image)
@@ -290,16 +292,15 @@ class Generator(nn.Module):
             out = mod(out)
             skips.append(out)
 
-        output_dict: Dict[str, Tensor] = {}
+        # output_dict: Dict[str, Tensor] = {}
 
         motion_params = self.pixelwise_flow_predictor(source_image=source_image,
-                                                      driving_region_params=driving_region_params,
+                                                      transform_region_params=transform_region_params,
                                                       source_region_params=source_region_params)
-        output_dict["deformed"] = self.deform_input(source_image, motion_params['optical_flow'])
-        # motion_params.keys() -- dict_keys(['optical_flow', 'occlusion_map'])
+        # output_dict["deformed"] = self.deform_input(source_image, motion_params.optical_flow)
         # if 'occlusion_map' in motion_params:
         #     output_dict['occlusion_map'] = motion_params['occlusion_map']
-        output_dict['occlusion_map'] = motion_params['occlusion_map']
+        # output_dict['occlusion_map'] = motion_params.occlusion_map
 
         out = self.apply_optical_without_prev(out, motion_params)
         out = self.bottleneck(out)
@@ -325,6 +326,7 @@ class Generator(nn.Module):
         #     out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
         out = self.apply_optical_with_prev(out, source_image, motion_params)
 
-        output_dict["prediction"] = out
+        # output_dict["prediction"] = out
 
-        return output_dict
+        # return output_dict
+        return out

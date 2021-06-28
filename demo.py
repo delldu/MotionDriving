@@ -27,6 +27,13 @@ from modules.avd_network import AVDNetwork
 
 import os
 import pdb
+import collections
+
+
+# Only for typing annotations
+Tensor = torch.Tensor
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
 
 class MotionDriving(nn.Module):
     def __init__(self):
@@ -46,7 +53,7 @@ class MotionDriving(nn.Module):
         self.avd_network.eval()
 
     def forward(self, source_image, driving_image):
-        source_params = self.region_predictor(source_image)
+        source_params: RegionParams = self.region_predictor(source_image)
 
         # pp source_image.shape -- torch.Size([1, 3, 384, 384])
         # source_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
@@ -58,8 +65,8 @@ class MotionDriving(nn.Module):
         # (Pdb) source_params['d'].size() -- torch.Size([10, 2, 2])
 
         # now image is driving frame
-        driving_params: Dict[str, Tensor] = self.region_predictor(driving_image)
-        transform_params: Dict[str, Tensor] = self.avd_network(source_params, driving_params)
+        driving_params: RegionParams = self.region_predictor(driving_image)
+        transform_params: TransformParams = self.avd_network(source_params, driving_params)
         
         return self.generator(source_image, source_params, transform_params)
 
@@ -92,7 +99,7 @@ def make_animation(model, source_image, driving_video):
         with torch.no_grad():
             out = model(source, driving_frame)
 
-        predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
+        predictions.append(np.transpose(out.data.cpu().numpy(), [0, 2, 3, 1])[0])
 
     # type(predictions), predictions[0].shape-- (<class 'list'>, (384, 384, 3))
 
@@ -119,8 +126,8 @@ def main(opt):
 
     print("Building script model ...")
     torch.jit.script(model)
-    # traced_model = torch.jit.trace(model, 
-    #     (torch.randn(1, 3, 256, 256).cuda(),  torch.randn(1, 3, 256, 256).cuda()))
+    traced_model = torch.jit.trace(model, 
+        (torch.randn(1, 3, 256, 256).cuda(),  torch.randn(1, 3, 256, 256).cuda()))
     # pdb.set_trace()
 
     print("Building OK.")
