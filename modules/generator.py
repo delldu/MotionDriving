@@ -102,7 +102,8 @@ class Generator(nn.Module):
             occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         return input_skip * occlusion_map
 
-    def forward(self, source_image, driving_region_params: Dict[str, Tensor], source_region_params: Dict[str, Tensor]):
+    def forward(self, source_image, driving_region_params: Dict[str, Tensor], 
+        source_region_params: Dict[str, Tensor]) -> Dict[str, Tensor]:
         out = self.first(source_image)
         skips: List[Tensor] = [out]
         # for i in range(len(self.down_blocks)):

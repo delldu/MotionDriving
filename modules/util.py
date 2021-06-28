@@ -7,14 +7,94 @@ title, fitness for a particular purpose, non-infringement, or that such code is 
 In no event will Snap Inc. be liable for any damages or losses of any kind arising from the sample code or your use thereof.
 """
 
-from torch import nn
-
-import torch.nn.functional as F
 import torch
-from sync_batchnorm import SynchronizedBatchNorm2d as BatchNorm2d
+from torch import nn
+import torch.nn.functional as F
+from torch.nn.modules.batchnorm import _BatchNorm
+
 from typing import List
 
 import pdb
+
+
+class BatchNorm2d(_BatchNorm):
+    # def __init__(self):
+    #     super(BatchNorm2d, self).__init__()
+
+    r"""Applies Batch Normalization over a 4d input that is seen as a mini-batch
+    of 3d inputs
+
+    .. math::
+
+        y = \frac{x - mean[x]}{ \sqrt{Var[x] + \epsilon}} * gamma + beta
+
+    This module differs from the built-in PyTorch BatchNorm2d as the mean and
+    standard-deviation are reduced across all devices during training.
+
+    For example, when one uses `nn.DataParallel` to wrap the network during
+    training, PyTorch's implementation normalize the tensor on each device using
+    the statistics only on that device, which accelerated the computation and
+    is also easy to implement, but the statistics might be inaccurate.
+    Instead, in this synchronized version, the statistics will be computed
+    over all training samples distributed on multiple devices.
+    
+    Note that, for one-GPU or CPU-only case, this module behaves exactly same
+    as the built-in PyTorch implementation.
+
+    The mean and standard-deviation are calculated per-dimension over
+    the mini-batches and gamma and beta are learnable parameter vectors
+    of size C (where C is the input size).
+
+    During training, this layer keeps a running estimate of its computed mean
+    and variance. The running sum is kept with a default momentum of 0.1.
+
+    During evaluation, this running mean/variance is used for normalization.
+
+    Because the BatchNorm is done over the `C` dimension, computing statistics
+    on `(N, H, W)` slices, it's common terminology to call this Spatial BatchNorm
+
+    Args:
+        num_features: num_features from an expected input of
+            size batch_size x num_features x height x width
+        eps: a value added to the denominator for numerical stability.
+            Default: 1e-5
+        momentum: the value used for the running_mean and running_var
+            computation. Default: 0.1
+        affine: a boolean value that when set to ``True``, gives the layer learnable
+            affine parameters. Default: ``True``
+
+    Shape:
+        - Input: :math:`(N, C, H, W)`
+        - Output: :math:`(N, C, H, W)` (same shape as input)
+
+    Examples:
+        >>> # With Learnable Parameters
+        >>> m = SynchronizedBatchNorm2d(100)
+        >>> # Without Learnable Parameters
+        >>> m = SynchronizedBatchNorm2d(100, affine=False)
+        >>> input = torch.autograd.Variable(torch.randn(20, 100, 35, 45))
+        >>> output = m(input)
+    """
+
+    # def _check_input_dim(self, input):
+    #     if input.dim() != 4:
+    #         raise ValueError('expected 4D input (got {}D input)'
+    #                          .format(input.dim()))
+    #     super(SynchronizedBatchNorm2d, self)._check_input_dim(input)
+
+    def forward(self, input):
+        # If it is not parallel computation or is in evaluation mode, use PyTorch's implementation.
+
+        # self._is_parallel and self.training -- False, self.training -- False
+        # if not (self._is_parallel and self.training):
+        #     return F.batch_norm(
+        #         input, self.running_mean, self.running_var, self.weight, self.bias,
+        #         self.training, self.momentum, self.eps)
+        return F.batch_norm(
+            input, self.running_mean, self.running_var, self.weight, self.bias,
+            self.training, self.momentum, self.eps)
+
+
 
 @torch.jit.script
 def make_coordinate_grid(h: int, w: int):
@@ -86,6 +166,9 @@ class ResBlock2d(nn.Module):
                                padding=padding)
         self.norm1 = BatchNorm2d(in_features, affine=True)
         self.norm2 = BatchNorm2d(in_features, affine=True)
+        # in_features = 256
+        # kernel_size = (3, 3)
+        # padding = (1, 1)
 
     def forward(self, x):
         out = self.norm1(x)
@@ -320,13 +403,13 @@ class AntiAliasInterpolation2d(nn.Module):
         return out
 
 
-def to_homogeneous(coordinates):
-    ones_shape = list(coordinates.shape)
-    ones_shape[-1] = 1
-    ones = torch.ones(ones_shape).type(coordinates.type())
+# def to_homogeneous(coordinates):
+#     ones_shape = list(coordinates.shape)
+#     ones_shape[-1] = 1
+#     ones = torch.ones(ones_shape).type(coordinates.type())
 
-    return torch.cat([coordinates, ones], dim=-1)
+#     return torch.cat([coordinates, ones], dim=-1)
 
 
-def from_homogeneous(coordinates):
-    return coordinates[..., :2] / coordinates[..., 2:3]
+# def from_homogeneous(coordinates):
+#     return coordinates[..., :2] / coordinates[..., 2:3]

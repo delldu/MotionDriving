@@ -17,18 +17,15 @@ import numpy as np
 from skimage.transform import resize
 from skimage import img_as_ubyte
 import torch
-from sync_batchnorm import DataParallelWithCallback
+# from sync_batchnorm import DataParallelWithCallback
 
 from modules.generator import Generator
 from modules.region_predictor import RegionPredictor
 from modules.avd_network import AVDNetwork
-from animate import get_animation_region_params
-import matplotlib
 
 import os
 import pdb
 
-matplotlib.use('Agg')
 
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.7")
@@ -47,10 +44,11 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
 
     generator = Generator()
 
-    print("Building generator ...")
-    script_model = torch.jit.script(generator)
-    print(script_model.code)
-    print("Building OK")
+    # print("Building generator ...")
+    # script_model = torch.jit.script(generator)
+    # script_model.save("output/motion_generator.pt")
+    # print(script_model.code)
+    # print("Building OK")
 
     # pdb.set_trace()
 
@@ -59,20 +57,22 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
 
     region_predictor = RegionPredictor()
 
-    print("Building region predictor ...")
-    script_model = torch.jit.script(region_predictor)
-    print(script_model.code)
-    print("Building OK")
+    # print("Building region predictor ...")
+    # script_model = torch.jit.script(region_predictor)
+    # script_model.save("output/motion_predictor.pt")
+    # print(script_model.code)
+    # print("Building OK")
 
     if not cpu:
         region_predictor.cuda()
 
     avd_network = AVDNetwork()
 
-    print("Building avd_network ...")
-    script_model = torch.jit.script(avd_network)
-    print(script_model.code)
-    print("Building OK")
+    # print("Building avd_network ...")
+    # script_model = torch.jit.script(avd_network)
+    # script_model.save("output/motion_avdnetwork.pt")
+    # print(script_model.code)
+    # print("Building OK")
     # pdb.set_trace()
     
     if not cpu:
@@ -88,10 +88,10 @@ def load_checkpoints(config_path, checkpoint_path, cpu=False):
     if 'avd_network' in checkpoint:
         avd_network.load_state_dict(checkpoint['avd_network'])
 
-    if not cpu:
-        generator = DataParallelWithCallback(generator)
-        region_predictor = DataParallelWithCallback(region_predictor)
-        avd_network = DataParallelWithCallback(avd_network)
+    # if not cpu:
+    #     generator = DataParallelWithCallback(generator)
+    #     region_predictor = DataParallelWithCallback(region_predictor)
+    #     avd_network = DataParallelWithCallback(avd_network)
 
     generator.eval()
     region_predictor.eval()
