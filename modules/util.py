@@ -18,35 +18,8 @@ import pdb
 
 
 class BatchNorm2d(_BatchNorm):
-    # def __init__(self):
-    #     super(BatchNorm2d, self).__init__()
-
     r"""Applies Batch Normalization over a 4d input that is seen as a mini-batch
     of 3d inputs
-
-    .. math::
-
-        y = \frac{x - mean[x]}{ \sqrt{Var[x] + \epsilon}} * gamma + beta
-
-    This module differs from the built-in PyTorch BatchNorm2d as the mean and
-    standard-deviation are reduced across all devices during training.
-
-    For example, when one uses `nn.DataParallel` to wrap the network during
-    training, PyTorch's implementation normalize the tensor on each device using
-    the statistics only on that device, which accelerated the computation and
-    is also easy to implement, but the statistics might be inaccurate.
-    Instead, in this synchronized version, the statistics will be computed
-    over all training samples distributed on multiple devices.
-    
-    Note that, for one-GPU or CPU-only case, this module behaves exactly same
-    as the built-in PyTorch implementation.
-
-    The mean and standard-deviation are calculated per-dimension over
-    the mini-batches and gamma and beta are learnable parameter vectors
-    of size C (where C is the input size).
-
-    During training, this layer keeps a running estimate of its computed mean
-    and variance. The running sum is kept with a default momentum of 0.1.
 
     During evaluation, this running mean/variance is used for normalization.
 
@@ -76,20 +49,9 @@ class BatchNorm2d(_BatchNorm):
         >>> output = m(input)
     """
 
-    # def _check_input_dim(self, input):
-    #     if input.dim() != 4:
-    #         raise ValueError('expected 4D input (got {}D input)'
-    #                          .format(input.dim()))
-    #     super(SynchronizedBatchNorm2d, self)._check_input_dim(input)
-
     def forward(self, input):
         # If it is not parallel computation or is in evaluation mode, use PyTorch's implementation.
 
-        # self._is_parallel and self.training -- False, self.training -- False
-        # if not (self._is_parallel and self.training):
-        #     return F.batch_norm(
-        #         input, self.running_mean, self.running_var, self.weight, self.bias,
-        #         self.training, self.momentum, self.eps)
         return F.batch_norm(
             input, self.running_mean, self.running_var, self.weight, self.bias,
             self.training, self.momentum, self.eps)
