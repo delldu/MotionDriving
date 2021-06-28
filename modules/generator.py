@@ -12,15 +12,14 @@ from torch import nn
 import torch.nn.functional as F
 from modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, region2gaussian
-from typing import Dict, List
+from typing import List
 import collections
 
 import pdb
+
 # Only for typing annotations
 Tensor = torch.Tensor
-RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
-
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 MotionParams = collections.namedtuple('MotionParams', ['optical_flow', 'occlusion_map'])
 
 
@@ -67,7 +66,7 @@ class PixelwiseFlowPredictor(nn.Module):
             self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
 
     def create_heatmap_representations(self, source_image, 
-        transform_region_params: TransformParams, source_region_params: RegionParams):
+        transform_region_params: RegionParams, source_region_params: RegionParams):
         """
         Eq 6. in the paper H_k(z)
         """
@@ -98,7 +97,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return heatmap
 
-    def create_sparse_motions(self, source_image, transform_region_params: TransformParams, 
+    def create_sparse_motions(self, source_image, transform_region_params: RegionParams, 
         source_region_params: RegionParams):
         bs, _, h, w = source_image.shape
 
@@ -146,7 +145,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return sparse_deformed
 
-    def forward(self, source_image, transform_region_params: TransformParams, 
+    def forward(self, source_image, transform_region_params: RegionParams, 
         source_region_params: RegionParams) -> MotionParams:
         # self.scale_factor == 0.25
         # if self.scale_factor != 1:
@@ -280,7 +279,7 @@ class Generator(nn.Module):
         occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         return input_skip * occlusion_map
 
-    def forward(self, source_image, source_region_params: RegionParams, transform_region_params: TransformParams):
+    def forward(self, source_image, source_region_params: RegionParams, transform_region_params: RegionParams):
         # Remove "if" for trace model
 
         out = self.first(source_image)

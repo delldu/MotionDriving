@@ -29,11 +29,9 @@ import os
 import pdb
 import collections
 
-
 # Only for typing annotations
 Tensor = torch.Tensor
-RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 class MotionDriving(nn.Module):
     def __init__(self):
@@ -66,7 +64,7 @@ class MotionDriving(nn.Module):
 
         # now image is driving frame
         driving_params: RegionParams = self.region_predictor(driving_image)
-        transform_params: TransformParams = self.avd_network(source_params, driving_params)
+        transform_params: RegionParams = self.avd_network(source_params, driving_params)
         
         return self.generator(source_image, source_params, transform_params)
 

@@ -8,16 +8,14 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 """
 import torch
 from torch import nn
-from typing import Dict, Tuple
+from typing import Tuple
 import collections
 
 import pdb
 
 # Only for typing annotations
 Tensor = torch.Tensor
-RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-TransformParams = collections.namedtuple('TransformParams', ['shift', 'covar', 'affine'])
-
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 class AVDNetwork(nn.Module):
     """
@@ -87,7 +85,7 @@ class AVDNetwork(nn.Module):
         affine = emb[:, :, 2:].view(emb.shape[0], emb.shape[1], 2, 2)
         return shift, affine
 
-    def forward(self, x_id: RegionParams, x_pose: RegionParams) -> TransformParams:
+    def forward(self, x_id: RegionParams, x_pose: RegionParams) -> RegionParams:
         # (Pdb) pp x_id.keys()
         # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
         # (Pdb) pp x_pose.keys()
@@ -111,7 +109,7 @@ class AVDNetwork(nn.Module):
         covar = torch.matmul(affine, affine.permute(0, 1, 3, 2))
 
         # ['shift', 'covar', 'affine']
-        return TransformParams(shift=shift, covar=covar, affine=affine)
+        return RegionParams(shift=shift, covar=covar, affine=affine)
 
 if __name__ == '__main__':
     """Onnx tools ..."""

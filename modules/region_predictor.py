@@ -13,13 +13,13 @@ import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
 
 import collections
-from typing import Dict, List, Tuple
+from typing import Tuple
 
 import pdb
+
 # Only for typing annotations
 Tensor = torch.Tensor
-
-RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 
 def svd(covar):
@@ -166,4 +166,4 @@ class RegionPredictor(nn.Module):
         # region_params['u'] = u
         # region_params['d'] = d
 
-        return RegionParams(shift=shift, covar=covar, heatmap=heatmap, affine=sqrt, u=u, d=d)
+        return RegionParams(shift=shift, covar=covar, affine=sqrt)
