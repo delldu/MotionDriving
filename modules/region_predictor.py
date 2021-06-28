@@ -7,8 +7,9 @@ title, fitness for a particular purpose, non-infringement, or that such code is 
 In no event will Snap Inc. be liable for any damages or losses of any kind arising from the sample code or your use thereof.
 """
 
-from torch import nn
 import torch
+from torch import nn
+from torch import Tensor
 import torch.nn.functional as F
 from modules.util import Hourglass, make_coordinate_grid, AntiAliasInterpolation2d, Encoder
 
@@ -18,7 +19,6 @@ from typing import Tuple
 import pdb
 
 # Only for typing annotations
-Tensor = torch.Tensor
 RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 

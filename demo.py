@@ -19,8 +19,6 @@ from skimage import img_as_ubyte
 import torch
 from torch import nn
 
-# from sync_batchnorm import DataParallelWithCallback
-
 from modules.generator import Generator
 from modules.region_predictor import RegionPredictor
 from modules.avd_network import AVDNetwork
@@ -30,7 +28,6 @@ import pdb
 import collections
 
 # Only for typing annotations
-Tensor = torch.Tensor
 RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 class MotionDriving(nn.Module):
@@ -57,10 +54,7 @@ class MotionDriving(nn.Module):
         # source_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
         # (Pdb) source_params['shift'].size() -- torch.Size([1, 10, 2])
         # (Pdb) source_params['covar'].size() -- torch.Size([1, 10, 2, 2])
-        # (Pdb) source_params['heatmap'].size() -- torch.Size([1, 10, 96, 96])
         # (Pdb) source_params['affine'].size() -- torch.Size([1, 10, 2, 2])
-        # (Pdb) source_params['u'].size() -- torch.Size([10, 2, 2])
-        # (Pdb) source_params['d'].size() -- torch.Size([10, 2, 2])
 
         # now image is driving frame
         driving_params: RegionParams = self.region_predictor(driving_image)

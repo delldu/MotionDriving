@@ -9,6 +9,7 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 
 import torch
 from torch import nn
+from torch import Tensor
 import torch.nn.functional as F
 from modules.util import ResBlock2d, SameBlock2d, UpBlock2d, DownBlock2d
 from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, region2gaussian
@@ -18,7 +19,6 @@ import collections
 import pdb
 
 # Only for typing annotations
-Tensor = torch.Tensor
 RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 MotionParams = collections.namedtuple('MotionParams', ['optical_flow', 'occlusion_map'])
 

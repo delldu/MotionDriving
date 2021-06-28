@@ -8,13 +8,13 @@ In no event will Snap Inc. be liable for any damages or losses of any kind arisi
 """
 import torch
 from torch import nn
+from torch import Tensor
 from typing import Tuple
 import collections
 
 import pdb
 
 # Only for typing annotations
-Tensor = torch.Tensor
 RegionParams = collections.namedtuple('RegionParams', ['shift', 'covar', 'affine'])
 
 class AVDNetwork(nn.Module):
