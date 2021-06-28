@@ -17,6 +17,8 @@ import numpy as np
 from skimage.transform import resize
 from skimage import img_as_ubyte
 import torch
+from torch import nn
+
 # from sync_batchnorm import DataParallelWithCallback
 
 from modules.generator import Generator
@@ -26,6 +28,41 @@ from modules.avd_network import AVDNetwork
 import os
 import pdb
 
+class MotionDriving(nn.Module):
+    def __init__(self):
+        super(MotionDriving, self).__init__()
+        self.generator = Generator()
+        self.region_predictor = RegionPredictor()
+        self.avd_network = AVDNetwork()
+
+        self.source = None
+        self.source_params = None
+
+        self.load_weights("checkpoints/vox256.pth")
+
+    def load_weights(self, checkpoint):
+        state = torch.load(checkpoint, map_location=torch.device('cpu'))
+        self.generator.load_state_dict(state['generator'])
+        self.region_predictor.load_state_dict(state['region_predictor'])
+        self.avd_network.load_state_dict(state['avd_network'])
+
+        self.generator.eval()
+        self.region_predictor.eval()
+        self.avd_network.eval()
+
+    def forward(self, image, is_driving):
+        if not is_driving:
+            # image is source
+            self.source = image
+            self.source_params = self.region_predictor(image)
+            return image
+
+        # now image is driving frame
+        driving_params = self.region_predictor(image)
+        transform_params = self.avd_network(self.source_params, driving_params)
+        output = self.generator(self.source, self.source_params, transform_params)
+
+        return output
 
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.7")
@@ -109,15 +146,15 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
             source = source.cuda()
         driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
 
-        source_region_params = region_predictor(source)
+        source_params = region_predictor(source)
         # pp source.shape -- torch.Size([1, 3, 384, 384])
-        # source_region_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-        # (Pdb) source_region_params['shift'].size() -- torch.Size([1, 10, 2])
-        # (Pdb) source_region_params['covar'].size() -- torch.Size([1, 10, 2, 2])
-        # (Pdb) source_region_params['heatmap'].size() -- torch.Size([1, 10, 96, 96])
-        # (Pdb) source_region_params['affine'].size() -- torch.Size([1, 10, 2, 2])
-        # (Pdb) source_region_params['u'].size() -- torch.Size([10, 2, 2])
-        # (Pdb) source_region_params['d'].size() -- torch.Size([10, 2, 2])
+        # source_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+        # (Pdb) source_params['shift'].size() -- torch.Size([1, 10, 2])
+        # (Pdb) source_params['covar'].size() -- torch.Size([1, 10, 2, 2])
+        # (Pdb) source_params['heatmap'].size() -- torch.Size([1, 10, 96, 96])
+        # (Pdb) source_params['affine'].size() -- torch.Size([1, 10, 2, 2])
+        # (Pdb) source_params['u'].size() -- torch.Size([10, 2, 2])
+        # (Pdb) source_params['d'].size() -- torch.Size([10, 2, 2])
 
         # driving_region_params_initial = region_predictor(driving[:, :, 0])
         # driving[:, :, 0].size() -- torch.Size([1, 3, 384, 384])
@@ -128,16 +165,38 @@ def make_animation(source_image, driving_video, generator, region_predictor, avd
             driving_frame = driving[:, :, frame_idx]
             if not cpu:
                 driving_frame = driving_frame.cuda()
-            driving_region_params = region_predictor(driving_frame)
-            # new_region_params = get_animation_region_params(source_region_params, driving_region_params,
-            #                                                 driving_region_params_initial, avd_network=avd_network,
-            #                                                 mode=animation_mode)
+            driving_params = region_predictor(driving_frame)
             # only for avd
-            new_region_params = avd_network(source_region_params, driving_region_params)
+            transform_params = avd_network(source_params, driving_params)
 
-            out = generator(source, source_region_params=source_region_params, driving_region_params=new_region_params)
+            out = generator(source, source_params, transform_params)
 
             predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
+
+    # type(predictions), predictions[0].shape-- (<class 'list'>, (384, 384, 3))
+
+    return predictions
+
+
+def do_predict(model, source_image, driving_video):
+    predictions = []
+    source = torch.tensor(source_image[np.newaxis].astype(np.float32)).permute(0, 3, 1, 2)
+
+    source = source.cuda()
+    driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
+
+    with torch.no_grad():
+        model(source, False)
+
+    # (Pdb) driving.shape -- torch.Size([1, 3, 265, 384, 384])
+    for frame_idx in tqdm(range(driving.shape[2])):
+        driving_frame = driving[:, :, frame_idx]
+        driving_frame = driving_frame.cuda()
+
+        with torch.no_grad():
+            out = model(driving_frame, True)
+
+        predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
 
     # type(predictions), predictions[0].shape-- (<class 'list'>, (384, 384, 3))
 
@@ -161,15 +220,23 @@ def main(opt):
     # (Pdb) type(driving_video), len(driving_video), driving_video[0].shape
     # (<class 'list'>, 265, (384, 384, 3))
 
-    generator, region_predictor, avd_network = load_checkpoints(config_path=opt.config,
-                                                                checkpoint_path=opt.checkpoint, cpu=opt.cpu)
+    # generator, region_predictor, avd_network = load_checkpoints(config_path=opt.config,
+    #                                                             checkpoint_path=opt.checkpoint, cpu=opt.cpu)
 
-    # torch.save(generator.state_dict(), "output/motion_driving_generator.pth")
-    # torch.save(region_predictor.state_dict(), "output/motion_driving_region_predictor.pth")
-    # torch.save(avd_network.state_dict(), "output/motion_driving_avd_network.pth")
+    # # torch.save(generator.state_dict(), "output/motion_driving_generator.pth")
+    # # torch.save(region_predictor.state_dict(), "output/motion_driving_region_predictor.pth")
+    # # torch.save(avd_network.state_dict(), "output/motion_driving_avd_network.pth")
 
-    predictions = make_animation(source_image, driving_video, generator, region_predictor, avd_network,
-                                 animation_mode=opt.mode, cpu=opt.cpu)
+    # predictions = make_animation(source_image, driving_video, generator, region_predictor, avd_network,
+    #                              animation_mode=opt.mode, cpu=opt.cpu)
+
+
+
+    model = MotionDriving()
+    model = model.eval()
+    model = model.cuda()
+    
+    predictions = do_predict(model, source_image, driving_video)
 
     result_filename = opt.output + "/" + os.path.basename(opt.driving_video)
     imageio.mimsave(result_filename, [img_as_ubyte(frame) for frame in predictions], fps=fps)

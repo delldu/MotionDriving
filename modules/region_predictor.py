@@ -18,16 +18,6 @@ import pdb
 # Only for typing annotations
 Tensor = torch.Tensor
 
-# def svd(covar, fast=False):
-#     if fast:
-#         from torch_batch_svd import svd as fast_svd
-#         return fast_svd(covar)
-#     else:
-#         u, s, v = torch.svd(covar.cpu())
-#         s = s.to(covar.device)
-#         u = u.to(covar.device)
-#         v = v.to(covar.device)
-#         return u, s, v
 def svd(covar):
     u, s, v = torch.svd(covar.cpu())
     s = s.to(covar.device)
@@ -52,19 +42,18 @@ class RegionPredictor(nn.Module):
         estimate_affine = True
         scale_factor = 0.25
         pca_based = True
-        fast_svd = False
-        pad = 3
 
         self.predictor = Hourglass(block_expansion, in_features=num_channels,
                                    max_features=max_features, num_blocks=num_blocks)
 
-        self.regions = nn.Conv2d(in_channels=self.predictor.out_filters, out_channels=num_regions, kernel_size=(7, 7),
-                                 padding=pad)
+        self.regions = nn.Conv2d(in_channels=self.predictor.out_filters, out_channels=num_regions, 
+                                kernel_size=(7, 7),
+                                padding=3)
 
         # FOMM-like regression based representation
         if estimate_affine and not pca_based:
             self.jacobian = nn.Conv2d(in_channels=self.predictor.out_filters,
-                                      out_channels=4, kernel_size=(7, 7), padding=pad)
+                                      out_channels=4, kernel_size=(7, 7), padding=3)
             self.jacobian.weight.data.zero_()
             self.jacobian.bias.data.copy_(torch.tensor([1, 0, 0, 1], dtype=torch.float))
         else:
@@ -75,7 +64,6 @@ class RegionPredictor(nn.Module):
         self.temperature = temperature
         self.scale_factor = scale_factor
         self.pca_based = pca_based
-        self.fast_svd = fast_svd
 
         # scale_factor = 0.25
         if self.scale_factor != 1:
@@ -89,8 +77,6 @@ class RegionPredictor(nn.Module):
         # estimate_affine = True
         # scale_factor = 0.25
         # pca_based = True
-        # fast_svd = False
-        # pad = 3
 
     def region2affine(self, region):
         # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
@@ -156,7 +142,7 @@ class RegionPredictor(nn.Module):
         #     covar = region_params['covar']
         #     shape = covar.shape
         #     covar = covar.view(-1, 2, 2)
-        #     u, s, v = svd(covar, self.fast_svd)
+        #     u, s, v = svd(covar)
         #     d = torch.diag_embed(s ** 0.5)
         #     sqrt = torch.matmul(u, d)
         #     sqrt = sqrt.view(*shape)

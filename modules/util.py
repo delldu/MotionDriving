@@ -363,15 +363,3 @@ class AntiAliasInterpolation2d(nn.Module):
         out = out[:, :, ::self.int_inv_scale, ::self.int_inv_scale]
 
         return out
-
-
-# def to_homogeneous(coordinates):
-#     ones_shape = list(coordinates.shape)
-#     ones_shape[-1] = 1
-#     ones = torch.ones(ones_shape).type(coordinates.type())
-
-#     return torch.cat([coordinates, ones], dim=-1)
-
-
-# def from_homogeneous(coordinates):
-#     return coordinates[..., :2] / coordinates[..., 2:3]
