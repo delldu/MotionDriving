@@ -1,4 +1,4 @@
-"""Model predict."""# coding=utf-8
+"""Model predict."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -23,11 +23,24 @@ from model import get_model, model_device, model_setenv
 if __name__ == "__main__":
     """Predict."""
 
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--checkpoint', type=str, default="models/image_motion.pth", help="checkpint file")
-    parser.add_argument("--source_image", default='images/feynman.jpeg', help="path to source image")
-    parser.add_argument("--driving_video", default='videos/2/*.png', help="path to driving video")
-    parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default="models/image_motion.pth",
+        help="checkpint file",
+    )
+    parser.add_argument(
+        "--source_image", default="images/feynman.jpeg", help="path to source image"
+    )
+    parser.add_argument(
+        "--driving_video", default="videos/2/*.png", help="path to driving video"
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, default="output", help="output folder"
+    )
 
     args = parser.parse_args()
 
@@ -47,7 +60,7 @@ if __name__ == "__main__":
     source_tensor = totensor(source_image).unsqueeze(0).to(device)
 
     video_filenames = sorted(glob.glob(args.driving_video))
-    progress_bar = tqdm(total = len(video_filenames))
+    progress_bar = tqdm(total=len(video_filenames))
 
     for index, filename in enumerate(video_filenames):
         progress_bar.update(1)
@@ -58,6 +71,6 @@ if __name__ == "__main__":
         with torch.no_grad():
             output_tensor = model(source_tensor, driving_tensor).clamp(0, 1.0).squeeze()
 
-        output_filename ="{}/{}".format(args.output, os.path.basename(filename))
+        output_filename = "{}/{}".format(args.output, os.path.basename(filename))
 
         toimage(output_tensor.cpu()).save(output_filename)
