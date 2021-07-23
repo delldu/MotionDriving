@@ -251,14 +251,18 @@ class BatchNorm2d(_BatchNorm):
         )
 
 
-@torch.jit.script
+# @torch.jit.script
 def make_coordinate_grid(template):
     """
     template: BxCxHxW
     Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
     """
-    h = template.size(2)
-    w = template.size(3)
+
+    # h = template.size(2)
+    # w = template.size(3)
+    h = 64
+    w = 64
+
     y = torch.arange(-1.0, 1.0, 2.0 / h) + 1.0 / h
     x = torch.arange(-1.0, 1.0, 2.0 / w) + 1.0 / w
     yy = y.view(-1, 1).repeat(1, w)
