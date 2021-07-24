@@ -86,7 +86,8 @@ class RegionPredictor(nn.Module):
         region = region.unsqueeze(-1)
         # region.size() -- [1, 10, 64, 64, 1]
 
-        grid = make_coordinate_grid().unsqueeze_(0).unsqueeze_(0).to(region.device)
+        grid = self.grid.unsqueeze(0).unsqueeze(0).to(region.device)
+
         # grid.size() -- [1, 1, 64, 64, 2]
         mean = (region * grid).sum(dim=(2, 3))
 
@@ -197,50 +198,6 @@ def make_coordinate_grid():
     xx = x.view(1, -1).repeat(h, 1)
 
     return torch.cat([xx.unsqueeze_(2), yy.unsqueeze_(2)], 2)
-
-
-# @torch.jit.script
-def region2gaussian(center, covar):
-    """
-    Transform a region parameters into gaussian like heatmap
-    """
-    # spatial_size = torch.Size([64, 64])
-    # center.size() -- torch.Size([1, 10, 2])
-
-    mean = center
-
-    coordinate_grid = make_coordinate_grid().to(mean.device)
-    # coordinate_grid.size() -- [64, 64, 2]
-    number_of_leading_dimensions = len(mean.shape) - 1
-    # number_of_leading_dimensions -- 2
-
-    shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
-    # coordinate_grid = coordinate_grid.view(*shape)
-    coordinate_grid = coordinate_grid.view(shape)
-
-    repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
-    # coordinate_grid = coordinate_grid.repeat(*repeats)
-    coordinate_grid = coordinate_grid.repeat(repeats)
-
-    # Preprocess kp shape
-    shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2)
-    # mean = mean.view(*shape)
-    mean = mean.view(shape)
-
-    mean_sub = coordinate_grid - mean
-
-    shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
-    # xxxx8888
-    covar_inverse = torch.inverse(covar).view(shape)
-    # covar_inverse.size() -- [1, 10, 1, 1, 2, 2]
-    # covar.size() -- [1, 10, 2, 2]
-
-    under_exp = torch.matmul(
-        torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1)
-    )
-    out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
-
-    return out
 
 
 class ResBlock2d(nn.Module):
@@ -566,6 +523,48 @@ class PixelwiseFlowPredictor(nn.Module):
         self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
         self.grid = make_coordinate_grid()
 
+    def region2gaussian(self, center, covar):
+        """
+        Transform a region parameters into gaussian like heatmap
+        """
+        # spatial_size = torch.Size([64, 64])
+        # center.size() -- torch.Size([1, 10, 2])
+
+        mean = center
+
+        coordinate_grid = self.grid.to(mean.device)
+        # coordinate_grid.size() -- [64, 64, 2]
+        number_of_leading_dimensions = len(mean.shape) - 1
+        # number_of_leading_dimensions -- 2
+
+        shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
+        # coordinate_grid = coordinate_grid.view(*shape)
+        coordinate_grid = coordinate_grid.view(shape)
+
+        repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
+        # coordinate_grid = coordinate_grid.repeat(*repeats)
+        coordinate_grid = coordinate_grid.repeat(repeats)
+
+        # Preprocess kp shape
+        shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2)
+        # mean = mean.view(*shape)
+        mean = mean.view(shape)
+
+        mean_sub = coordinate_grid - mean
+
+        shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
+        # xxxx8888
+        covar_inverse = torch.inverse(covar).view(shape)
+        # covar_inverse.size() -- [1, 10, 1, 1, 2, 2]
+        # covar.size() -- [1, 10, 2, 2]
+
+        under_exp = torch.matmul(
+            torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1)
+        )
+        out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
+
+        return out
+
     def create_heatmap(
         self,
         source_image,
@@ -580,10 +579,10 @@ class PixelwiseFlowPredictor(nn.Module):
         # w = int(source_image.shape[3])
 
         covar = transform_region_params.covar
-        gaussian_driving = region2gaussian(transform_region_params.shift, covar)
+        gaussian_driving = self.region2gaussian(transform_region_params.shift, covar)
 
         covar = source_region_params.covar
-        gaussian_source = region2gaussian(source_region_params.shift, covar)
+        gaussian_source = self.region2gaussian(source_region_params.shift, covar)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
@@ -605,7 +604,7 @@ class PixelwiseFlowPredictor(nn.Module):
     ):
         bs, _, h, w = source_image.shape
 
-        identity_grid = make_coordinate_grid().to(source_region_params.shift.device)
+        identity_grid = self.grid.to(source_region_params.shift.device)
 
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - transform_region_params.shift.view(

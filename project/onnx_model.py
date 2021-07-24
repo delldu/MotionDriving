@@ -129,7 +129,6 @@ if __name__ == "__main__":
         model.eval()
         traced_model = torch.jit.trace(model, (dummy_source, dummy_driving))
         pdb.set_trace()
-        
 
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
