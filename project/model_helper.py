@@ -51,10 +51,7 @@ class RegionPredictor(nn.Module):
         num_channels = 3
         max_features = 1024
         num_blocks = 5
-        temperature = 0.1
-        estimate_affine = True
         scale_factor = 0.25
-        pca_based = True
 
         self.predictor = Hourglass(
             block_expansion,
@@ -70,39 +67,36 @@ class RegionPredictor(nn.Module):
             padding=3,
         )
 
-        # temperature = 0.1
-        self.temperature = temperature
+        self.temperature = 0.1
         self.scale_factor = scale_factor
-        self.pca_based = pca_based
 
         # scale_factor = 0.25
-        if self.scale_factor != 1:
-            self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
+        self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
 
         # block_expansion = 32
         # num_regions = 10
         # num_channels = 3
         # max_features = 1024
         # num_blocks = 5
-        # estimate_affine = True
-        # scale_factor = 0.25
-        # pca_based = True
+        self.grid = make_coordinate_grid()
 
     def region2affine(self, region) -> Tuple[Tensor, Tensor]:
         # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
         shape = region.shape
         region = region.unsqueeze(-1)
-        # region.size() -- torch.Size([1, 10, 96, 96, 1]) ?
+        # region.size() -- [1, 10, 64, 64, 1]
 
-        grid = (
-            make_coordinate_grid(region).unsqueeze_(0).unsqueeze_(0).to(region.device)
-        )
+        grid = make_coordinate_grid().unsqueeze_(0).unsqueeze_(0).to(region.device)
+        # grid.size() -- [1, 1, 64, 64, 2]
         mean = (region * grid).sum(dim=(2, 3))
 
         shift = mean
+        # mean.size() -- [1, 10, 2]
 
-        # self.pca_based == True
         mean_sub = grid - mean.unsqueeze(-2).unsqueeze(-2)
+        # mean.unsqueeze(-2).unsqueeze(-2) -- [1, 10, 1, 1, 2]
+        # mean_sub.size() -- [1, 1, 64, 64, 2]
+
         covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
         covar = covar * region.unsqueeze(-1)
         # covar.size() -- [1, 10, 64, 64, 2, 2]
@@ -110,14 +104,11 @@ class RegionPredictor(nn.Module):
         # covar = covar.sum(dim=(2, 3))
         covar = covar.sum(dim=3).sum(dim=2)
 
-        # (Pdb) shift'.size() -- [1, 10, 2]
-        # (Pdb) covar'.size() -- [1, 10, 2, 2]
-
+        # shift'.size() -- [1, 10, 2], covar'.size() -- [1, 10, 2, 2]
         return shift, covar
 
     def forward(self, x) -> RegionParams:
         # x.size() -- torch.Size([1, 3, 256, 256])
-        # scale_factor = 0.25
         x = self.down(x)
 
         feature_map = self.predictor(x)
@@ -126,11 +117,9 @@ class RegionPredictor(nn.Module):
         final_shape = prediction.shape
         region = prediction.view(final_shape[0], final_shape[1], -1)
         region = F.softmax(region / self.temperature, dim=2)
-        # region = region.view(*final_shape)
         region = region.view(final_shape)
 
         shift, covar = self.region2affine(region)
-        heatmap = region
 
         # Regression-based estimation
         shape = covar.shape
@@ -195,16 +184,12 @@ class BatchNorm2d(_BatchNorm):
 
 
 # @torch.jit.script
-def make_coordinate_grid(template):
+def make_coordinate_grid():
     """
-    template: BxCxHxW
     Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
     """
-
-    h = template.size(2)
-    w = template.size(3)
-    # h == 64
-    # w == 64
+    h = 64
+    w = 64
 
     y = torch.arange(-1.0, 1.0, 2.0 / h) + 1.0 / h
     x = torch.arange(-1.0, 1.0, 2.0 / w) + 1.0 / w
@@ -215,7 +200,7 @@ def make_coordinate_grid(template):
 
 
 # @torch.jit.script
-def region2gaussian(center, covar, template):
+def region2gaussian(center, covar):
     """
     Transform a region parameters into gaussian like heatmap
     """
@@ -224,7 +209,8 @@ def region2gaussian(center, covar, template):
 
     mean = center
 
-    coordinate_grid = make_coordinate_grid(template).to(mean.device)
+    coordinate_grid = make_coordinate_grid().to(mean.device)
+    # coordinate_grid.size() -- [64, 64, 2]
     number_of_leading_dimensions = len(mean.shape) - 1
     # number_of_leading_dimensions -- 2
 
@@ -337,7 +323,6 @@ class DownBlock2d(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size=(2, 2))
 
     def forward(self, x):
-        # ==> pdb.set_trace()
         out = self.conv(x)
         out = self.norm(out)
         out = F.relu(out)
@@ -362,7 +347,6 @@ class SameBlock2d(nn.Module):
         self.norm = BatchNorm2d(out_features, affine=True)
 
     def forward(self, x):
-        # ==> pdb.set_trace()
         out = self.conv(x)
         out = self.norm(out)
         out = F.relu(out)
@@ -506,8 +490,7 @@ class AntiAliasInterpolation2d(nn.Module):
 
         kernel_size = [kernel_size, kernel_size]
         sigma = [sigma, sigma]
-        # The gaussian kernel is the product of the
-        # gaussian function of each dimension.
+        # The gaussian kernel is the product of the gaussian function of each dimension.
         kernel = 1
         meshgrids = torch.meshgrid(
             [torch.arange(size, dtype=torch.float32) for size in kernel_size]
@@ -531,8 +514,6 @@ class AntiAliasInterpolation2d(nn.Module):
 
     def forward(self, input):
         # self.scale -- 0.25
-        # if self.scale == 1.0:
-        #     return input
         out = F.pad(input, (self.ka, self.kb, self.ka, self.kb))
         out = F.conv2d(out, weight=self.weight, groups=self.groups)
         out = out[:, :, :: self.int_inv_scale, :: self.int_inv_scale]
@@ -553,30 +534,17 @@ class PixelwiseFlowPredictor(nn.Module):
         max_features,
         num_regions,
         num_channels,
-        estimate_occlusion_map=False,
-        scale_factor=1,
-        region_var=0.01,
-        use_covar_heatmap=False,
-        use_deformed_source=True,
-        revert_axis_swap=False,
     ):
         super(PixelwiseFlowPredictor, self).__init__()
-        # pdb.set_trace()
         # block_expansion = 64
         # num_blocks = 5
         # max_features = 1024
         # num_regions = 10
         # num_channels = 3
-        # estimate_occlusion_map = True
-        # scale_factor = 0.25
-        # region_var = 0.01
-        # use_covar_heatmap = True
-        # use_deformed_source = True
-        # revert_axis_swap = True
 
         self.hourglass = Hourglass(
             block_expansion=block_expansion,
-            in_features=(num_regions + 1) * (num_channels * use_deformed_source + 1),
+            in_features=(num_regions + 1) * (num_channels + 1),
             max_features=max_features,
             num_blocks=num_blocks,
         )
@@ -588,22 +556,17 @@ class PixelwiseFlowPredictor(nn.Module):
             padding=(3, 3),
         )
 
-        # estimate_occlusion_map = True
         self.occlusion = nn.Conv2d(
             self.hourglass.out_filters, 1, kernel_size=(7, 7), padding=(3, 3)
         )
 
         self.num_regions = num_regions
-        self.scale_factor = scale_factor
-        self.region_var = region_var
-        self.use_covar_heatmap = use_covar_heatmap
-        self.use_deformed_source = use_deformed_source
-        self.revert_axis_swap = revert_axis_swap
+        self.scale_factor = 0.25
 
-        if self.scale_factor != 1:
-            self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
+        self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
+        self.grid = make_coordinate_grid()
 
-    def create_heatmap_representations(
+    def create_heatmap(
         self,
         source_image,
         transform_region_params: RegionParams,
@@ -613,21 +576,14 @@ class PixelwiseFlowPredictor(nn.Module):
         Eq 6. in the paper H_k(z)
         """
         # (Pdb) source_image.shape -- torch.Size([1, 3, 64, 64])
-        # spatial_size = source_image.shape[2:]
         # h = int(source_image.shape[2])
         # w = int(source_image.shape[3])
 
-        # use_covar_heatmap = True
-        # covar = self.region_var if not self.use_covar_heatmap else transform_region_params['covar']
         covar = transform_region_params.covar
-        gaussian_driving = region2gaussian(
-            transform_region_params.shift, covar, source_image
-        )
+        gaussian_driving = region2gaussian(transform_region_params.shift, covar)
 
         covar = source_region_params.covar
-        gaussian_source = region2gaussian(
-            source_region_params.shift, covar, source_image
-        )
+        gaussian_source = region2gaussian(source_region_params.shift, covar)
 
         heatmap = gaussian_driving - gaussian_source
         # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
@@ -649,9 +605,7 @@ class PixelwiseFlowPredictor(nn.Module):
     ):
         bs, _, h, w = source_image.shape
 
-        identity_grid = make_coordinate_grid(source_image).to(
-            source_region_params.shift.device
-        )
+        identity_grid = make_coordinate_grid().to(source_region_params.shift.device)
 
         identity_grid = identity_grid.view(1, 1, h, w, 2)
         coordinate_grid = identity_grid - transform_region_params.shift.view(
@@ -663,7 +617,6 @@ class PixelwiseFlowPredictor(nn.Module):
             source_region_params.affine, torch.inverse(transform_region_params.affine)
         )
 
-        # self.revert_axis_swap == True
         affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
         affine = affine.unsqueeze(-3).unsqueeze(-3)
         affine = affine.repeat(1, 1, h, w, 1, 1)
@@ -709,15 +662,12 @@ class PixelwiseFlowPredictor(nn.Module):
         transform_region_params: RegionParams,
         source_region_params: RegionParams,
     ) -> MotionParams:
-        # self.scale_factor == 0.25
-        # if self.scale_factor != 1:
-        #     source_image = self.down(source_image)
         source_image = self.down(source_image)
 
         bs, _, h, w = source_image.shape
 
         # out_dict: Dict[str, torch.Tensor] = dict()
-        heatmap_representation = self.create_heatmap_representations(
+        heatmap = self.create_heatmap(
             source_image, transform_region_params, source_region_params
         )
         sparse_motion = self.create_sparse_motions(
@@ -725,8 +675,7 @@ class PixelwiseFlowPredictor(nn.Module):
         )
         deformed_source = self.create_deformed_source_image(source_image, sparse_motion)
 
-        # self.use_deformed_source == True
-        predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
+        predictor_input = torch.cat([heatmap, deformed_source], dim=2)
         predictor_input = predictor_input.view(bs, -1, h, w)
 
         prediction = self.hourglass(predictor_input)
@@ -763,18 +712,12 @@ class Generator(nn.Module):
             "block_expansion": 64,
             "max_features": 1024,
             "num_blocks": 5,
-            "scale_factor": 0.25,
-            "use_deformed_source": True,
-            "use_covar_heatmap": True,
-            "estimate_occlusion_map": True,
         }
         skips = True
-        revert_axis_swap = True
 
         self.pixelwise_flow_predictor = PixelwiseFlowPredictor(
             num_regions=num_regions,
             num_channels=num_channels,
-            revert_axis_swap=revert_axis_swap,
             **pixelwise_flow_predictor_params
         )
 
@@ -909,11 +852,9 @@ class AVDNetwork(nn.Module):
         num_regions = 10
         id_bottle_size = 64
         pose_bottle_size = 64
-        revert_axis_swap = True
 
         input_size = (2 + 4) * num_regions
         self.num_regions = num_regions
-        self.revert_axis_swap = revert_axis_swap
 
         self.id_encoder = nn.Sequential(
             nn.Linear(input_size, 256),
