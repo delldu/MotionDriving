@@ -26,26 +26,16 @@ RegionParams = collections.namedtuple("RegionParams", ["shift", "covar", "affine
 MotionParams = collections.namedtuple("MotionParams", ["optical_flow", "occlusion_map"])
 
 # xxxx8888
-# from torch.onnx.symbolic_helper import parse_args
-# from torch.onnx.symbolic_registry import register_op
-
-# @parse_args('v')
-# def motion_svd(g, input):
-#     return g.op('onnxservice::svd', input)
-
-# register_op('svd', motion_svd, '', 11)
+from torch.onnx.symbolic_helper import parse_args
+from torch.onnx.symbolic_registry import register_op
 
 
-def svd(covar) -> Tuple[Tensor, Tensor, Tensor]:
-    # xxxx8888
-    u, s, v = torch.svd(covar)
-    s = s.to(covar.device)
-    u = u.to(covar.device)
-    v = v.to(covar.device)
-    # covar.size() -- [10, 2, 2]
-    # u.size(), s.size(), v.size() -- [10, 2, 2], [10, 2], [10, 2, 2]
+@parse_args("v")
+def svd(g, input):
+    return g.op("onnxservice::svd", input)
 
-    return u, s, v
+
+register_op("svd", svd, "", 11)
 
 
 class RegionPredictor(nn.Module):
@@ -80,20 +70,6 @@ class RegionPredictor(nn.Module):
             padding=3,
         )
 
-        # FOMM-like regression based representation
-        if estimate_affine and not pca_based:
-            self.jacobian = nn.Conv2d(
-                in_channels=self.predictor.out_filters,
-                out_channels=4,
-                kernel_size=(7, 7),
-                padding=3,
-            )
-            self.jacobian.weight.data.zero_()
-            self.jacobian.bias.data.copy_(torch.tensor([1, 0, 0, 1], dtype=torch.float))
-        else:
-            self.jacobian = None
-        # ==> pp self.jacobian == None
-
         # temperature = 0.1
         self.temperature = temperature
         self.scale_factor = scale_factor
@@ -118,34 +94,30 @@ class RegionPredictor(nn.Module):
         region = region.unsqueeze(-1)
         # region.size() -- torch.Size([1, 10, 96, 96, 1]) ?
 
-        # region.type() -- 'torch.cuda.FloatTensor'
         grid = (
             make_coordinate_grid(region).unsqueeze_(0).unsqueeze_(0).to(region.device)
         )
         mean = (region * grid).sum(dim=(2, 3))
 
-        # region_params = {'shift': mean}
         shift = mean
 
         # self.pca_based == True
-        # if self.pca_based:
         mean_sub = grid - mean.unsqueeze(-2).unsqueeze(-2)
         covar = torch.matmul(mean_sub.unsqueeze(-1), mean_sub.unsqueeze(-2))
         covar = covar * region.unsqueeze(-1)
-        covar = covar.sum(dim=(2, 3))
-        # region_params['covar'] = covar
+        # covar.size() -- [1, 10, 64, 64, 2, 2]
 
-        # (Pdb) region_params.keys() -- dict_keys(['shift', 'covar'])
-        # (Pdb) region_params['shift'].size() -- torch.Size([1, 10, 2])
-        # (Pdb) region_params['covar'].size() -- torch.Size([1, 10, 2, 2])
+        # covar = covar.sum(dim=(2, 3))
+        covar = covar.sum(dim=3).sum(dim=2)
+
+        # (Pdb) shift'.size() -- [1, 10, 2]
+        # (Pdb) covar'.size() -- [1, 10, 2, 2]
 
         return shift, covar
 
     def forward(self, x) -> RegionParams:
         # x.size() -- torch.Size([1, 3, 256, 256])
         # scale_factor = 0.25
-        # if self.scale_factor != 1:
-        #     x = self.down(x)
         x = self.down(x)
 
         feature_map = self.predictor(x)
@@ -158,48 +130,19 @@ class RegionPredictor(nn.Module):
         region = region.view(final_shape)
 
         shift, covar = self.region2affine(region)
-        # region_params['heatmap'] = region
         heatmap = region
 
         # Regression-based estimation
-        # self.jacobian is None
-        # if self.jacobian is not None:
-        #     jacobian_map = self.jacobian(feature_map)
-        #     jacobian_map = jacobian_map.reshape(final_shape[0], 1, 4, final_shape[2],
-        #                                         final_shape[3])
-        #     region = region.unsqueeze(2)
-
-        #     jacobian = region * jacobian_map
-        #     jacobian = jacobian.view(final_shape[0], final_shape[1], 4, -1)
-        #     jacobian = jacobian.sum(dim=-1)
-        #     jacobian = jacobian.view(jacobian.shape[0], jacobian.shape[1], 2, 2)
-        #     region_params['affine'] = jacobian
-        #     region_params['covar'] = torch.matmul(jacobian, jacobian.permute(0, 1, 3, 2))
-        # elif self.pca_based:
-        #     # self.pca_based == True
-        #     covar = region_params['covar']
-        #     shape = covar.shape
-        #     covar = covar.view(-1, 2, 2)
-        #     u, s, v = svd(covar)
-        #     d = torch.diag_embed(s ** 0.5)
-        #     sqrt = torch.matmul(u, d)
-        #     sqrt = sqrt.view(*shape)
-        #     region_params['affine'] = sqrt
-        #     region_params['u'] = u
-        #     region_params['d'] = d
-
         shape = covar.shape
+        # shape == [1, 10, 2, 2]
         covar = covar.view(-1, 2, 2)
-        u, s, v = svd(covar)
-        # xxxx8888
+        # covar.size() == [10, 2, 2]
+        u, s, v = torch.svd(covar)
         d = torch.diag_embed(s ** 0.5)
+        # s ** 0.5.size() == [10, 2] ==> d.size() == [10, 2, 2]
 
-        # d = s ** 0.5
         sqrt = torch.matmul(u, d)
         sqrt = sqrt.view(shape)
-        # region_params['affine'] = sqrt
-        # region_params['u'] = u
-        # region_params['d'] = d
 
         return RegionParams(shift=shift, covar=covar, affine=sqrt)
 
@@ -258,10 +201,10 @@ def make_coordinate_grid(template):
     Create a meshgrid [-1,1] x [-1,1] of given spatial_size.
     """
 
-    # h = template.size(2)
-    # w = template.size(3)
-    h = 64
-    w = 64
+    h = template.size(2)
+    w = template.size(3)
+    # h == 64
+    # w == 64
 
     y = torch.arange(-1.0, 1.0, 2.0 / h) + 1.0 / h
     x = torch.arange(-1.0, 1.0, 2.0 / w) + 1.0 / w
@@ -299,15 +242,6 @@ def region2gaussian(center, covar, template):
     mean = mean.view(shape)
 
     mean_sub = coordinate_grid - mean
-    # type(covar) -- <class 'torch.Tensor'>
-    # ==> type(covar) == float, False
-    # if type(covar) == float:
-    #     out = torch.exp(-0.5 * (mean_sub ** 2).sum(-1) / covar)
-    # else:
-    #     shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
-    #     covar_inverse = torch.inverse(covar).view(*shape)
-    #     under_exp = torch.matmul(torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1))
-    #     out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
 
     shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
     # xxxx8888
@@ -690,8 +624,6 @@ class PixelwiseFlowPredictor(nn.Module):
             transform_region_params.shift, covar, source_image
         )
 
-        # use_covar_heatmap = True
-        # covar = self.region_var if not self.use_covar_heatmap else source_region_params['covar']
         covar = source_region_params.covar
         gaussian_source = region2gaussian(
             source_region_params.shift, covar, source_image
@@ -727,14 +659,11 @@ class PixelwiseFlowPredictor(nn.Module):
         )
 
         # 'affine' in transform_region_params -- True
-        # if 'affine' in transform_region_params:
         affine = torch.matmul(
             source_region_params.affine, torch.inverse(transform_region_params.affine)
         )
 
         # self.revert_axis_swap == True
-        # if self.revert_axis_swap:
-        #     affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
         affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
         affine = affine.unsqueeze(-3).unsqueeze(-3)
         affine = affine.repeat(1, 1, h, w, 1, 1)
@@ -749,8 +678,8 @@ class PixelwiseFlowPredictor(nn.Module):
         bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
 
         sparse_motions = torch.cat([bg_grid, driving_to_source], dim=1)
-        # (Pdb) driving_to_source.size() -- torch.Size([1, 10, 64, 64, 2])
-        # pp sparse_motions.size() -- torch.Size([1, 11, 64, 64, 2])
+        # driving_to_source.size() -- [1, 10, 64, 64, 2]
+        # sparse_motions.size() -- [1, 11, 64, 64, 2]
 
         return sparse_motions
 
@@ -764,14 +693,13 @@ class PixelwiseFlowPredictor(nn.Module):
         source_repeat = source_repeat.view(bs * (self.num_regions + 1), -1, h, w)
         sparse_motions = sparse_motions.view((bs * (self.num_regions + 1), h, w, -1))
 
-        # (Pdb) source_repeat.size() -- torch.Size([11, 3, 64, 64])
-        # (Pdb) sparse_motions.size() -- torch.Size([11, 64, 64, 2])
+        # source_repeat.size() -- [11, 3, 64, 64]
+        # sparse_motions.size() -- [11, 64, 64, 2]
         sparse_deformed = F.grid_sample(
             source_repeat, sparse_motions, align_corners=False
         )
         sparse_deformed = sparse_deformed.view((bs, self.num_regions + 1, -1, h, w))
-
-        # (Pdb) sparse_deformed.size() -- torch.Size([1, 11, 3, 64, 64])
+        # sparse_deformed.size() -- [1, 11, 3, 64, 64]
 
         return sparse_deformed
 
@@ -798,12 +726,7 @@ class PixelwiseFlowPredictor(nn.Module):
         deformed_source = self.create_deformed_source_image(source_image, sparse_motion)
 
         # self.use_deformed_source == True
-        # if self.use_deformed_source:
-        #     predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
-        # else:
-        #     predictor_input = heatmap_representation
         predictor_input = torch.cat([heatmap_representation, deformed_source], dim=2)
-
         predictor_input = predictor_input.view(bs, -1, h, w)
 
         prediction = self.hourglass(predictor_input)
@@ -814,10 +737,7 @@ class PixelwiseFlowPredictor(nn.Module):
         deformation = (sparse_motion * mask).sum(dim=1)
         deformation = deformation.permute(0, 2, 3, 1)
 
-        # out_dict['optical_flow'] = deformation
-
         occlusion_map = torch.sigmoid(self.occlusion(prediction))
-        # out_dict['occlusion_map'] = occlusion_map
 
         return MotionParams(optical_flow=deformation, occlusion_map=occlusion_map)
 
@@ -905,15 +825,6 @@ class Generator(nn.Module):
         self.skips = skips
 
     def deform_input(self, inp, optical_flow):
-        # Remove "if" for trace model
-        # _, h_old, w_old, _ = optical_flow.shape
-        # _, _, h, w = inp.shape
-        # if h_old != h or w_old != w:
-        #     # [b, h, w, 2] ==> [b, 2, h, w]
-        #     optical_flow = optical_flow.permute(0, 3, 1, 2)
-        #     # Flow smoothing ...
-        #     optical_flow = F.interpolate(optical_flow, size=(h, w), mode='bilinear', align_corners=False)
-        #     optical_flow = optical_flow.permute(0, 2, 3, 1)
         optical_flow = optical_flow.permute(0, 3, 1, 2)
         # Flow smoothing ...
         optical_flow = F.interpolate(
@@ -931,15 +842,12 @@ class Generator(nn.Module):
         deformation = motion_params.optical_flow
         input_skip = self.deform_input(input_skip, deformation)
         # Remove "if" for trace model
-        # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-        #     occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         occlusion_map = F.interpolate(
             occlusion_map,
             size=input_skip.shape[2:],
             mode="bilinear",
             align_corners=False,
         )
-        # input_previous != None
         return input_skip * occlusion_map + input_previous * (1 - occlusion_map)
 
     def apply_optical_without_prev(self, input_skip, motion_params: MotionParams):
@@ -947,9 +855,6 @@ class Generator(nn.Module):
         occlusion_map = motion_params.occlusion_map
         deformation = motion_params.optical_flow
         input_skip = self.deform_input(input_skip, deformation)
-        # Remove "if" for trace model
-        # if input_skip.shape[2] != occlusion_map.shape[2] or input_skip.shape[3] != occlusion_map.shape[3]:
-        #     occlusion_map = F.interpolate(occlusion_map, size=input_skip.shape[2:], mode='bilinear', align_corners=False)
         occlusion_map = F.interpolate(
             occlusion_map,
             size=input_skip.shape[2:],
@@ -964,56 +869,33 @@ class Generator(nn.Module):
         source_region_params: RegionParams,
         transform_region_params: RegionParams,
     ):
-        # Remove "if" for trace model
-
         out = self.first(source_image)
         skips: List[Tensor] = [out]
-        # for i in range(len(self.down_blocks)):
-        #     out = self.down_blocks[i](out)
-        #     skips.append(out)
         for mod in self.down_blocks:
             out = mod(out)
             skips.append(out)
-
-        # output_dict: Dict[str, Tensor] = {}
 
         motion_params = self.pixelwise_flow_predictor(
             source_image=source_image,
             transform_region_params=transform_region_params,
             source_region_params=source_region_params,
         )
-        # output_dict["deformed"] = self.deform_input(source_image, motion_params.optical_flow)
-        # if 'occlusion_map' in motion_params:
-        #     output_dict['occlusion_map'] = motion_params['occlusion_map']
-        # output_dict['occlusion_map'] = motion_params.occlusion_map
 
         out = self.apply_optical_without_prev(out, motion_params)
         out = self.bottleneck(out)
         i = 0
         for mod in self.up_blocks:
-            # self.skips -- True
-            # if self.skips:
-            #     out = self.apply_optical(input_skip=skips[-(i + 1)], input_previous=out, motion_params=motion_params)
             out = self.apply_optical_with_prev(out, skips[-(i + 1)], motion_params)
             out = mod(out)
             i = i + 1
 
-        # self.skips -- True
-        # if self.skips:
-        #     out = self.apply_optical(input_skip=skips[0], input_previous=out, motion_params=motion_params)
         out = self.apply_optical_with_prev(out, skips[0], motion_params)
 
         out = self.final(out)
         out = torch.sigmoid(out)
 
-        # self.skips -- True
-        # if self.skips:
-        #     out = self.apply_optical(input_skip=source_image, input_previous=out, motion_params=motion_params)
         out = self.apply_optical_with_prev(out, source_image, motion_params)
 
-        # output_dict["prediction"] = out
-
-        # return output_dict
         return out
 
 
@@ -1088,19 +970,11 @@ class AVDNetwork(nn.Module):
         return shift, affine
 
     def forward(self, x_id: RegionParams, x_pose: RegionParams) -> RegionParams:
-        # (Pdb) pp x_id.keys()
-        # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-        # (Pdb) pp x_pose.keys()
-        # dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
+        # pp x_id.keys() - dict_keys(['shift', 'covar', 'affine'])
+        # pp x_pose.keys() -- dict_keys(['shift', 'covar', 'affine'])
 
-        # self.revert_axis_swap -- True
-        # if self.revert_axis_swap:
-        #     affine = torch.matmul(x_id['affine'], torch.inverse(x_pose['affine']))
-        #     sign = torch.sign(affine[:, :, 0:1, 0:1])
-        #     x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
         affine = torch.matmul(x_id.affine, torch.inverse(x_pose.affine))
         sign = torch.sign(affine[:, :, 0:1, 0:1])
-        # x_id = {'affine': x_id['affine'] * sign, 'shift': x_id['shift']}
 
         pose_emb = self.pose_encoder(
             self.region_params_to_emb(x_pose.shift, x_pose.affine)
@@ -1138,11 +1012,11 @@ class MotionDriving(nn.Module):
     def forward(self, source_image, driving_image):
         source_params: RegionParams = self.region_predictor(source_image)
 
-        # pp source_image.shape -- torch.Size([1, 3, 384, 384])
-        # source_params.keys() -- dict_keys(['shift', 'covar', 'heatmap', 'affine', 'u', 'd'])
-        # (Pdb) source_params['shift'].size() -- torch.Size([1, 10, 2])
-        # (Pdb) source_params['covar'].size() -- torch.Size([1, 10, 2, 2])
-        # (Pdb) source_params['affine'].size() -- torch.Size([1, 10, 2, 2])
+        # pp source_image.shape -- [1, 3, 384, 384]
+        # source_params.keys() -- dict_keys(['shift', 'covar', 'affine'])
+        # (Pdb) source_params['shift'].size() -- [1, 10, 2]
+        # (Pdb) source_params['covar'].size() -- [1, 10, 2, 2]
+        # (Pdb) source_params['affine'].size() -- [1, 10, 2, 2]
 
         # now image is driving frame
         driving_params: RegionParams = self.region_predictor(driving_image)

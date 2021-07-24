@@ -124,10 +124,10 @@ if __name__ == "__main__":
         """Export onnx model."""
 
         # 1. Create and load model.
-        model = get_model(checkpoint)
+        model = get_model(checkpoint).generator
         # model = model.cuda()
         model.eval()
-        traced_model = torch.jit.trace(model, (dummy_source, dummy_driving))
+        # traced_model = torch.jit.trace(model, (dummy_source, dummy_driving))
 
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
