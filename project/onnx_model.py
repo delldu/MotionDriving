@@ -20,6 +20,10 @@ import onnxruntime
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
+import collections
+
+RegionParams = collections.namedtuple("RegionParams", ["shift", "covar", "affine"])
+
 
 #
 # /************************************************************************************
@@ -65,12 +69,42 @@ def onnx_forward(onnx_model, input):
     return torch.from_numpy(onnxruntime_outputs[0])
 
 
+def test_onnx():
+    from torch import nn
+
+    class TestModel(nn.Module):
+        def __init__(self):
+            super(TestModel, self).__init__()
+
+        def forward(self, x):
+            return x.view(-1, 2, 2)
+
+    model = TestModel()
+    model = model.eval()
+
+    input_names = ["input"]
+    output_names = ["output"]
+
+    torch.onnx.export(
+        model,
+        torch.randn(1, 10, 2, 2),
+        "/tmp/test.onnx",
+        input_names=input_names,
+        output_names=output_names,
+        verbose=True,
+        opset_version=11,
+        keep_initializers_as_inputs=False,
+        export_params=True,
+    )
+
+
 if __name__ == "__main__":
     """Onnx tools ..."""
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    parser.add_argument("-t", "--test", help="Test onnx model", action="store_true")
     parser.add_argument("-e", "--export", help="export onnx model", action="store_true")
     parser.add_argument("-v", "--verify", help="verify onnx model", action="store_true")
     parser.add_argument(
@@ -127,8 +161,6 @@ if __name__ == "__main__":
         model = get_model(checkpoint)
         # model = model.cuda()
         model.eval()
-        traced_model = torch.jit.trace(model, (dummy_source, dummy_driving))
-        pdb.set_trace()
 
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
@@ -199,6 +231,9 @@ if __name__ == "__main__":
     #
 
     # build_script()
+
+    if args.test:
+        test_onnx()
 
     if args.export:
         export_onnx()

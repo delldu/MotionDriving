@@ -38,6 +38,33 @@ def svd(g, input):
 register_op("svd", svd, "", 11)
 
 
+@parse_args("v")
+def inverse(g, input):
+    return g.op("onnxservice::inverse", input)
+
+
+register_op("inverse", inverse, "", 11)
+
+
+@parse_args("v", "v", "i", "i", "i")
+def grid_sampler(g, input, grid, interpolation_mode, padding_mode, align_corners=False):
+    """
+    torch.nn.functional.grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corners=None)
+    Need convert interpolation_mode, padding_mode ? NO for simpler at now !!!
+    """
+    return g.op(
+        "onnxservice::grid_sampler",
+        input,
+        grid,
+        interpolation_mode_i=interpolation_mode,
+        padding_mode_i=padding_mode,
+        align_corners_i=align_corners,
+    )
+
+
+register_op("grid_sampler", grid_sampler, "", 11)
+
+
 class RegionPredictor(nn.Module):
     """
     Region estimating. Estimate affine parameters of the region.
@@ -81,8 +108,7 @@ class RegionPredictor(nn.Module):
         self.grid = make_coordinate_grid()
 
     def region2affine(self, region) -> Tuple[Tensor, Tensor]:
-        # (Pdb) region.shape -- torch.Size([1, 10, 96, 96])
-        shape = region.shape
+        # region.shape -- [1, 10, 64, 64]
         region = region.unsqueeze(-1)
         # region.size() -- [1, 10, 64, 64, 1]
 
@@ -102,8 +128,7 @@ class RegionPredictor(nn.Module):
         covar = covar * region.unsqueeze(-1)
         # covar.size() -- [1, 10, 64, 64, 2, 2]
 
-        # covar = covar.sum(dim=(2, 3))
-        covar = covar.sum(dim=3).sum(dim=2)
+        covar = covar.sum(dim=(2, 3))
 
         # shift'.size() -- [1, 10, 2], covar'.size() -- [1, 10, 2, 2]
         return shift, covar
@@ -481,7 +506,7 @@ class AntiAliasInterpolation2d(nn.Module):
 class PixelwiseFlowPredictor(nn.Module):
     """
     Module that predicts a pixelwise flow from sparse motion representation given by
-    source_region_params and transform_region_params
+    source_region_params and trans_region_params
     """
 
     def __init__(
@@ -523,97 +548,95 @@ class PixelwiseFlowPredictor(nn.Module):
         self.down = AntiAliasInterpolation2d(num_channels, self.scale_factor)
         self.grid = make_coordinate_grid()
 
-    def region2gaussian(self, center, covar):
+    def region2gaussian(self, mean, covar):
         """
         Transform a region parameters into gaussian like heatmap
         """
-        # spatial_size = torch.Size([64, 64])
-        # center.size() -- torch.Size([1, 10, 2])
-
-        mean = center
+        # mean.size() -- [1, 10, 2]
 
         coordinate_grid = self.grid.to(mean.device)
         # coordinate_grid.size() -- [64, 64, 2]
-        number_of_leading_dimensions = len(mean.shape) - 1
-        # number_of_leading_dimensions -- 2
+        leading_dimensions = len(mean.shape) - 1
+        # leading_dimensions -- 2
 
-        shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
-        # coordinate_grid = coordinate_grid.view(*shape)
+        shape = (1,) * leading_dimensions + coordinate_grid.shape
+        # shape ==> (1, 1, 64, 64, 2)
         coordinate_grid = coordinate_grid.view(shape)
 
-        repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
-        # coordinate_grid = coordinate_grid.repeat(*repeats)
+        repeats = mean.shape[:leading_dimensions] + (1, 1, 1)
+        # repeats ==> (1, 10, 1, 1, 1)
         coordinate_grid = coordinate_grid.repeat(repeats)
+        # ==> (1, 10, 64, 64, 2)
 
         # Preprocess kp shape
-        shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2)
-        # mean = mean.view(*shape)
+        shape = mean.shape[:leading_dimensions] + (1, 1, 2)
+        # ==> (1, 10,   1, 1, 2)
         mean = mean.view(shape)
 
         mean_sub = coordinate_grid - mean
 
-        shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2, 2)
-        # xxxx8888
+        shape = mean.shape[:leading_dimensions] + (1, 1, 2, 2)
+        # ==> (1, 10,   1, 1, 2, 2,)
         covar_inverse = torch.inverse(covar).view(shape)
         # covar_inverse.size() -- [1, 10, 1, 1, 2, 2]
         # covar.size() -- [1, 10, 2, 2]
 
+        # mean_sub.size() -- [1, 10, 64, 64, 2]
         under_exp = torch.matmul(
             torch.matmul(mean_sub.unsqueeze(-2), covar_inverse), mean_sub.unsqueeze(-1)
         )
-        out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
+        # under_exp.size() -- [1, 10, 64, 64, 1, 1]
 
+        out = torch.exp(-0.5 * under_exp.sum(dim=(-1, -2)))
+        # out.size() -- [1, 10, 64, 64]
         return out
 
     def create_heatmap(
         self,
         source_image,
-        transform_region_params: RegionParams,
+        trans_region_params: RegionParams,
         source_region_params: RegionParams,
     ):
         """
         Eq 6. in the paper H_k(z)
         """
-        # (Pdb) source_image.shape -- torch.Size([1, 3, 64, 64])
-        # h = int(source_image.shape[2])
-        # w = int(source_image.shape[3])
+        # source_image.shape -- [1, 3, 64, 64]
 
-        covar = transform_region_params.covar
-        gaussian_driving = self.region2gaussian(transform_region_params.shift, covar)
+        covar = trans_region_params.covar
+        gaussian_driving = self.region2gaussian(trans_region_params.shift, covar)
 
         covar = source_region_params.covar
         gaussian_source = self.region2gaussian(source_region_params.shift, covar)
 
         heatmap = gaussian_driving - gaussian_source
-        # (Pdb) heatmap.size() -- torch.Size([1, 10, 64, 64])
+        # heatmap.size() -- [1, 10, 64, 64]
 
         # adding background feature
         # zeros = torch.zeros(heatmap.shape[0], 1, h, w).to(heatmap.device)
         zeros = torch.zeros_like(source_image)[:, 0:1, :, :]
         heatmap = torch.cat([zeros, heatmap], dim=1).unsqueeze(2)
 
-        # (Pdb) heatmap.size() -- torch.Size([1, 11, 1, 64, 64])
-
+        # heatmap.size() -- [1, 11, 1, 64, 64]
         return heatmap
 
     def create_sparse_motions(
         self,
         source_image,
-        transform_region_params: RegionParams,
+        trans_region_params: RegionParams,
         source_region_params: RegionParams,
     ):
         bs, _, h, w = source_image.shape
 
-        identity_grid = self.grid.to(source_region_params.shift.device)
+        id_grid = self.grid.to(source_region_params.shift.device)
 
-        identity_grid = identity_grid.view(1, 1, h, w, 2)
-        coordinate_grid = identity_grid - transform_region_params.shift.view(
+        id_grid = id_grid.view(1, 1, h, w, 2)
+        coordinate_grid = id_grid - trans_region_params.shift.view(
             bs, self.num_regions, 1, 1, 2
         )
 
-        # 'affine' in transform_region_params -- True
+        # 'affine' in trans_region_params -- True
         affine = torch.matmul(
-            source_region_params.affine, torch.inverse(transform_region_params.affine)
+            source_region_params.affine, torch.inverse(trans_region_params.affine)
         )
 
         affine = affine * torch.sign(affine[:, :, 0:1, 0:1])
@@ -627,7 +650,7 @@ class PixelwiseFlowPredictor(nn.Module):
         )
 
         # adding background feature
-        bg_grid = identity_grid.repeat(bs, 1, 1, 1, 1)
+        bg_grid = id_grid.repeat(bs, 1, 1, 1, 1)
 
         sparse_motions = torch.cat([bg_grid, driving_to_source], dim=1)
         # driving_to_source.size() -- [1, 10, 64, 64, 2]
@@ -635,7 +658,7 @@ class PixelwiseFlowPredictor(nn.Module):
 
         return sparse_motions
 
-    def create_deformed_source_image(self, source_image, sparse_motions):
+    def create_deformed_source(self, source_image, sparse_motions):
         bs, _, h, w = source_image.shape
         source_repeat = (
             source_image.unsqueeze(1)
@@ -643,7 +666,7 @@ class PixelwiseFlowPredictor(nn.Module):
             .repeat(1, self.num_regions + 1, 1, 1, 1, 1)
         )
         source_repeat = source_repeat.view(bs * (self.num_regions + 1), -1, h, w)
-        sparse_motions = sparse_motions.view((bs * (self.num_regions + 1), h, w, -1))
+        sparse_motions = sparse_motions.view(bs * (self.num_regions + 1), h, w, -1)
 
         # source_repeat.size() -- [11, 3, 64, 64]
         # sparse_motions.size() -- [11, 64, 64, 2]
@@ -658,42 +681,50 @@ class PixelwiseFlowPredictor(nn.Module):
     def forward(
         self,
         source_image,
-        transform_region_params: RegionParams,
+        trans_region_params: RegionParams,
         source_region_params: RegionParams,
     ) -> MotionParams:
         source_image = self.down(source_image)
 
         bs, _, h, w = source_image.shape
 
-        # out_dict: Dict[str, torch.Tensor] = dict()
         heatmap = self.create_heatmap(
-            source_image, transform_region_params, source_region_params
+            source_image, trans_region_params, source_region_params
         )
         sparse_motion = self.create_sparse_motions(
-            source_image, transform_region_params, source_region_params
+            source_image, trans_region_params, source_region_params
         )
-        deformed_source = self.create_deformed_source_image(source_image, sparse_motion)
+        # sparse_motion.size() -- [1, 11, 64, 64, 2]
+        deformed_source = self.create_deformed_source(source_image, sparse_motion)
 
+        # heatmap.size()         -- [1, 11, 1, 64, 64]
+        # deformed_source.size() -- [1, 11, 3, 64, 64]
         predictor_input = torch.cat([heatmap, deformed_source], dim=2)
         predictor_input = predictor_input.view(bs, -1, h, w)
+        # predictor_input.size() -- [1, 44, 64, 64]
 
         prediction = self.hourglass(predictor_input)
+        # prediction.size() -- [1, 108, 64, 64]
 
         mask = self.mask(prediction)
         mask = F.softmax(mask, dim=1).unsqueeze(2)
         sparse_motion = sparse_motion.permute(0, 1, 4, 2, 3)
+        # sparse_motion.size() -- [1, 11, 2, 64, 64]
         deformation = (sparse_motion * mask).sum(dim=1)
         deformation = deformation.permute(0, 2, 3, 1)
 
         occlusion_map = torch.sigmoid(self.occlusion(prediction))
 
+        # deformation.size() -- [1, 64, 64, 2]
+        # occlusion_map.size() -- [1, 1, 64, 64]
         return MotionParams(optical_flow=deformation, occlusion_map=occlusion_map)
 
 
 class Generator(nn.Module):
     """
-    Generator that given source image and region parameters try to transform image according to movement trajectories
-    induced by region parameters. Generator follows Johnson architecture.
+    Generator that given source image and region parameters try to transform
+    image according to movement trajectories induced by region parameters.
+    Generator follows Johnson architecture.
     """
 
     # __constants__ = ['up_blocks', 'down_blocks']
@@ -766,15 +797,19 @@ class Generator(nn.Module):
         self.num_channels = num_channels
         self.skips = skips
 
-    def deform_input(self, inp, optical_flow):
+    def deform_input(self, input, optical_flow):
+        # input.size() -- [1, 256, 64, 64]
+        # optical_flow.size() -- [1, 64, 64, 2]
+
         optical_flow = optical_flow.permute(0, 3, 1, 2)
+
         # Flow smoothing ...
         optical_flow = F.interpolate(
-            optical_flow, size=inp.shape[2:], mode="bilinear", align_corners=False
+            optical_flow, size=input.shape[2:], mode="bilinear", align_corners=False
         )
         optical_flow = optical_flow.permute(0, 2, 3, 1)
 
-        return F.grid_sample(inp, optical_flow, align_corners=False)
+        return F.grid_sample(input, optical_flow, align_corners=False)
 
     def apply_optical_with_prev(
         self, input_previous, input_skip, motion_params: MotionParams
@@ -809,7 +844,7 @@ class Generator(nn.Module):
         self,
         source_image,
         source_region_params: RegionParams,
-        transform_region_params: RegionParams,
+        trans_region_params: RegionParams,
     ):
         out = self.first(source_image)
         skips: List[Tensor] = [out]
@@ -819,7 +854,7 @@ class Generator(nn.Module):
 
         motion_params = self.pixelwise_flow_predictor(
             source_image=source_image,
-            transform_region_params=transform_region_params,
+            trans_region_params=trans_region_params,
             source_region_params=source_region_params,
         )
 
@@ -910,8 +945,10 @@ class AVDNetwork(nn.Module):
         return shift, affine
 
     def forward(self, x_id: RegionParams, x_pose: RegionParams) -> RegionParams:
-        # pp x_id.keys() - dict_keys(['shift', 'covar', 'affine'])
-        # pp x_pose.keys() -- dict_keys(['shift', 'covar', 'affine'])
+        # x_id - ['shift', 'covar', 'affine']
+        # x_pose - ['shift', 'covar', 'affine']
+        # shift.size(), covar.size(), affine.size()
+        # [1, 10, 2], [10, 2, 2], [1, 10, 2, 2]
 
         affine = torch.matmul(x_id.affine, torch.inverse(x_pose.affine))
         sign = torch.sign(affine[:, :, 0:1, 0:1])
@@ -952,7 +989,7 @@ class MotionDriving(nn.Module):
     def forward(self, source_image, driving_image):
         source_params: RegionParams = self.region_predictor(source_image)
 
-        # pp source_image.shape -- [1, 3, 384, 384]
+        # pp source_image.shape -- [1, 3, 256, 256]
         # source_params.keys() -- dict_keys(['shift', 'covar', 'affine'])
         # (Pdb) source_params['shift'].size() -- [1, 10, 2]
         # (Pdb) source_params['covar'].size() -- [1, 10, 2, 2]
