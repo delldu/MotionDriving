@@ -21,11 +21,6 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
-import collections
-import ons
-
-RegionParams = collections.namedtuple("RegionParams", ["shift", "covar", "affine"])
-
 
 #
 # /************************************************************************************
@@ -69,32 +64,6 @@ def onnx_forward(onnx_model, input):
     onnxruntime_inputs = {onnx_model.get_inputs()[0].name: to_numpy(input)}
     onnxruntime_outputs = onnx_model.run(None, onnxruntime_inputs)
     return torch.from_numpy(onnxruntime_outputs[0])
-
-
-def test_onnx():
-    from torch import nn
-
-    class TestModel(nn.Module):
-        def __init__(self):
-            super(TestModel, self).__init__()
-
-        def forward(self, covar):
-            u, s, v = torch.svd(covar)
-            return torch.diag_embed(s)
-
-            # d = torch.diag_embed(s ** 0.5)
-            # return torch.matmul(u, d)
-
-    model = TestModel()
-    model = model.eval()
-
-    torch.onnx.export(
-        model,
-        torch.randn(1, 10, 2, 2),
-        "/tmp/test.onnx",
-        verbose=True,
-        opset_version=11,
-    )
 
 
 if __name__ == "__main__":
@@ -234,9 +203,6 @@ if __name__ == "__main__":
     #
 
     # build_script()
-
-    if args.test:
-        test_onnx()
 
     if args.export:
         export_onnx()
