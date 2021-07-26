@@ -20,19 +20,20 @@ from torch import Tensor
 import torch.nn.functional as F
 from torch.nn.modules.batchnorm import _BatchNorm
 
-
 # Only for typing annotations
 RegionParams = collections.namedtuple("RegionParams", ["shift", "covar", "affine"])
 MotionParams = collections.namedtuple("MotionParams", ["optical_flow", "occlusion_map"])
 
-# xxxx8888
 from torch.onnx.symbolic_helper import parse_args
 from torch.onnx.symbolic_registry import register_op
 
-
-@parse_args("v")
-def svd(g, input):
-    return g.op("onnxservice::svd", input)
+# svd C++ prototype:
+#     std::tuple<Tensor, Tensor, Tensor> svd(const Tensor& self, bool some, bool compute_uv)
+# svd python prototype:
+#     torch.svd(input, some=True, compute_uv=True, *, out=None) -> (Tensor, Tensor, Tensor)
+@parse_args("v", "i", "i", "none")
+def svd(g, input, some=1, compute_uv=1, out=None):
+    return g.op("onnxservice::svd", input, outputs=3)
 
 
 register_op("svd", svd, "", 11)
@@ -45,12 +46,23 @@ def inverse(g, input):
 
 register_op("inverse", inverse, "", 11)
 
+# torch.diag_embed(input, offset=0, dim1=-2, dim2=-1)
+
+
+@parse_args("v", "i", "i", "i")
+def diag_embed(g, input, offset, dim1, dim2):
+    return g.op("onnxservice::diag_embed", input)
+
+
+register_op("diag_embed", diag_embed, "", 11)
+
 
 @parse_args("v", "v", "i", "i", "i")
 def grid_sampler(g, input, grid, interpolation_mode, padding_mode, align_corners=False):
     """
-    torch.nn.functional.grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corners=None)
-    Need convert interpolation_mode, padding_mode ? NO for simpler at now !!!
+    torch.nn.functional.grid_sample(input, grid, mode='bilinear',
+        padding_mode='zeros', align_corners=None)
+    Need convert interpolation_mode, padding_mode? NO for simpler !!!
     """
     return g.op(
         "onnxservice::grid_sampler",
@@ -152,12 +164,16 @@ class RegionPredictor(nn.Module):
         # shape == [1, 10, 2, 2]
         covar = covar.view(-1, 2, 2)
         # covar.size() == [10, 2, 2]
-        u, s, v = torch.svd(covar)
-        d = torch.diag_embed(s ** 0.5)
-        # s ** 0.5.size() == [10, 2] ==> d.size() == [10, 2, 2]
 
+        u, s, v = torch.svd(covar)
+
+        d = torch.diag_embed(s ** 0.5)
+
+        # s ** 0.5.size() == [10, 2] ==> d.size() == [10, 2, 2]
         sqrt = torch.matmul(u, d)
         sqrt = sqrt.view(shape)
+
+        # sqrt.size() -- [1, 10, 2, 2]
 
         return RegionParams(shift=shift, covar=covar, affine=sqrt)
 

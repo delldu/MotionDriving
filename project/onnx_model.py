@@ -18,9 +18,11 @@ import numpy as np
 import onnx
 import onnxruntime
 import torch
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
 import collections
+import ons
 
 RegionParams = collections.namedtuple("RegionParams", ["shift", "covar", "affine"])
 
@@ -76,25 +78,22 @@ def test_onnx():
         def __init__(self):
             super(TestModel, self).__init__()
 
-        def forward(self, x):
-            return x.view(-1, 2, 2)
+        def forward(self, covar):
+            u, s, v = torch.svd(covar)
+            return torch.diag_embed(s)
+
+            # d = torch.diag_embed(s ** 0.5)
+            # return torch.matmul(u, d)
 
     model = TestModel()
     model = model.eval()
-
-    input_names = ["input"]
-    output_names = ["output"]
 
     torch.onnx.export(
         model,
         torch.randn(1, 10, 2, 2),
         "/tmp/test.onnx",
-        input_names=input_names,
-        output_names=output_names,
         verbose=True,
         opset_version=11,
-        keep_initializers_as_inputs=False,
-        export_params=True,
     )
 
 
@@ -161,6 +160,10 @@ if __name__ == "__main__":
         model = get_model(checkpoint)
         # model = model.cuda()
         model.eval()
+
+        # traced_model = torch.jit.trace(model, (dummy_source, dummy_driving))
+
+        # pdb.set_trace()
 
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
