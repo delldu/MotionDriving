@@ -1,15 +1,14 @@
 #include <torch/extension.h>
-
 #include <iostream>
 
-// void do_leftsv((const float *)x.data_ptr(), (float *)y.data_ptr(), int n)
-// {
 
-// }
-
-void leftsv(const torch::Tensor &x, torch::Tensor &y)
+torch::Tensor leftsv(const torch::Tensor &self)
 {
-
+    torch::Tensor U, S, V;
+    std::tie(U, S, V) = self.svd();
+    torch::Tensor d = S.pow(0.5).diag_embed(/*offset=*/0, /*dim1=*/-2, /*dim2=*/-1);
+    
+    return torch::matmul(U, d);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

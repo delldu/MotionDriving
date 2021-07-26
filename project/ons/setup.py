@@ -14,10 +14,10 @@ from torch.utils import cpp_extension
 
 version = "0.0.1"
 package_name = "ons"
-
+so_prefix_name = "ons"
 setup(
     name=package_name,
     version=version,
-    ext_modules=[cpp_extension.CppExtension("ons", ["ons.cpp"])],
+    ext_modules=[cpp_extension.CppExtension(so_prefix_name, ["ons.cpp"])],
     cmdclass={"build_ext": cpp_extension.BuildExtension},
 )
