@@ -37,12 +37,9 @@ class GetSubWindowFunction(torch.autograd.Function):
         output = ons.GetSubWindow(input, pos)
         return output
 
-    # @staticmethod
-    # def backward(ctx, grad_h, grad_cell):
-    #     outputs = lltm_cpp.backward(
-    #         grad_h.contiguous(), grad_cell.contiguous(), *ctx.saved_tensors)
-    #     d_old_h, d_input, d_weights, d_bias, d_old_cell = outputs
-    #     return d_input, d_weights, d_bias, d_old_h, d_old_cell
+    @staticmethod
+    def symbolic(g, input, pos):
+        return g.op("onnxservice::GetSubWindow", input, pos) 
 
 
 class GetSubWindow(torch.nn.Module):
@@ -51,15 +48,6 @@ class GetSubWindow(torch.nn.Module):
 
     def forward(self, input, pos):
         return GetSubWindowFunction.apply(input, pos)
-
-
-
-# class TestModel(nn.Module):
-#     def __init__(self):
-#         super(TestModel, self).__init__()
-
-#     def forward(self, input, x1, y1, x2, y2):
-#     	return ons.GetSubWindow(input, x1, y1, x2, y2)
 
 
 if __name__ == "__main__":
@@ -96,7 +84,7 @@ if __name__ == "__main__":
         # 2. Model export
         print("Exporting onnx model to {}...".format(onnx_file_name))
 
-        input_names = ["input"]
+        input_names = ["input", "pos"]
         output_names = ["output"]
 
         torch.onnx.export(
