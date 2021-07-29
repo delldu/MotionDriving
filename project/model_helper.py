@@ -50,7 +50,7 @@ register_op("inverse", inverse, "", 11)
 # diag_embed python prototype:
 #     torch.diag_embed(input, offset=0, dim1=-2, dim2=-1)
 @parse_args("v", "i", "i", "i")
-def diag_embed(g, input, offset, dim1, dim2):
+def diag_embed(g, input, offset=0, dim1=-2, dim2=-1):
     return g.op("onnxservice::diag_embed", input)
 
 
@@ -701,7 +701,6 @@ class PixelwiseFlowPredictor(nn.Module):
         source_region_params: RegionParams,
     ) -> MotionParams:
         source_image = self.down(source_image)
-
         bs, _, h, w = source_image.shape
 
         heatmap = self.create_heatmap(
