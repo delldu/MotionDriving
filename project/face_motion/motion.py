@@ -786,7 +786,7 @@ class Generator(nn.Module):
 
         out = self.apply_optical_with_prev(out, source_image, motion_params)
 
-        return out
+        return out.clamp(0, 1.0)
 
 
 class AVDNetwork(nn.Module):

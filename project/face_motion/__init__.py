@@ -36,13 +36,12 @@ def get_model():
     return model, device
 
 
-def model_forward(model, device, face_tensor, input_tensor):
+def model_forward(model, device, face_tensor, driving_tensor):
     face_tensor = face_tensor.to(device)
-    input_tensor = input_tensor.to(device)
+    driving_tensor = driving_tensor.to(device)
 
     with torch.no_grad():
-        output_tensor = model(face_tensor, input_tensor).clamp(0, 1.0)
-
+        output_tensor = model(face_tensor, driving_tensor)
     return output_tensor
 
 
@@ -71,11 +70,11 @@ def predict(input_file, face_file, output_file):
         # print(f"frame: {no} -- {data.shape}")
         progress_bar.update(1)
 
-        input_tensor = todos.data.frame_totensor(data)
+        driving_tensor = todos.data.frame_totensor(data)
 
         # convert tensor from 1x4xHxW to 1x3xHxW
-        input_tensor = input_tensor[:, 0:3, :, :]
-        output_tensor = model_forward(model, device, face_tensor, input_tensor)
+        driving_tensor = driving_tensor[:, 0:3, :, :]
+        output_tensor = model_forward(model, device, face_tensor, driving_tensor)
 
         temp_output_file = "{}/{:06d}.png".format(output_dir, no)
         todos.data.save_tensor(output_tensor, temp_output_file)
