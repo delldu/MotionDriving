@@ -45,7 +45,9 @@ def model_forward(model, device, face_tensor, driving_tensor):
     return output_tensor
 
 
-def predict(input_file, face_file, output_file):
+def video_service(input_file, output_file, targ):
+    face_file = redos.taskarg_search(targ, "face_file")
+
     # load video
     video = redos.video.Reader(input_file)
     if video.n_frames < 1:
@@ -100,29 +102,10 @@ def client(name, input_file, face_file, output_file):
 
 
 def server(name, HOST="localhost", port=6379):
-    # return redos.video.service(name, "video_face", predict, HOST, port)
-    mkey = "video_face"
-    print(f"Start {mkey} service ...")
+    return redos.video.service(name, "video_face", video_service, HOST, port)
 
-    client = redos.Redos(name, HOST=HOST, port=port)
-    targ = client.get_queue_task(mkey)
-    if targ is None:
-        return False
-
-    qkey = targ["key"]
-    if not redos.taskarg_check(targ):
-        client.set_task_state(qkey, -100)
-        return False
-
-    client.set_task_state(qkey, 0)
-
-    input_file = redos.taskarg_search(targ, "input_file")
-    face_file = redos.taskarg_search(targ, "face_file")
-    output_file = redos.taskarg_search(targ, "output_file")
-
-    ret = predict(input_file, face_file, output_file)
-
-    # update state
-    client.set_task_state(qkey, 100 if ret else -100)
-
-    return ret
+def predict(input_file, face_file, output_file):
+    targ = redos.taskarg_parse(
+        f"video_face(input_file={input_file},face_file={face_file},output_file={output_file})"
+    )
+    video_service(input_file, output_file, targ)
