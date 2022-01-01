@@ -12,7 +12,7 @@
 import face_motion
 
 if __name__ == "__main__":
-    face_motion.predict("videos/2.mp4", "images/feynman.jpeg", "output/face_predict.mp4")
-    face_motion.client("PAI", "videos/2.mp4", "images/feynman.jpeg", "output/face_server.mp4")
-    face_motion.server("PAI")
+    face_motion.video_predict("videos/2.mp4", "images/feynman.jpeg", "output/face_predict.mp4")
+    face_motion.video_client("PAI", "videos/2.mp4", "images/feynman.jpeg", "output/face_server.mp4")
+    face_motion.video_server("PAI")
 

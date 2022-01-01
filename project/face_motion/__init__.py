@@ -101,10 +101,10 @@ def client(name, input_file, face_file, output_file):
     print(f"Created 1 video tasks for {name}.")
 
 
-def server(name, HOST="localhost", port=6379):
+def video_server(name, HOST="localhost", port=6379):
     return redos.video.service(name, "video_face", video_service, HOST, port)
 
-def predict(input_file, face_file, output_file):
+def video_predict(input_file, face_file, output_file):
     targ = redos.taskarg_parse(
         f"video_face(input_file={input_file},face_file={face_file},output_file={output_file})"
     )
